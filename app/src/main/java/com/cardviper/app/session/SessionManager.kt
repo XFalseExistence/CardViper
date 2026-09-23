@@ -5,9 +5,15 @@ import com.cardviper.app.blackjack.CountStrategyId
 import com.cardviper.app.blackjack.Kiss3Strategy
 import com.cardviper.app.blackjack.KoStrategy
 import com.cardviper.app.blackjack.LedgerResolver
+import com.cardviper.app.blackjack.ResolvedCard
+import com.cardviper.app.data.HardCaseSample
+import com.cardviper.app.data.HardCaseType
+import com.cardviper.app.data.PendingReview
+import com.cardviper.app.data.PendingReviewState
 import com.cardviper.app.data.SessionRepository
 import com.cardviper.app.model.CardEventSource
 import com.cardviper.app.model.CardLedgerEvent
+import com.cardviper.app.model.CardRank
 import com.cardviper.app.model.LedgerEventType
 import com.cardviper.app.model.PlayingCard
 import java.util.UUID
@@ -132,6 +138,103 @@ class SessionManager(
         return event
     }
 
+    suspend fun correctWithHardCase(targetEventId: String, card: PlayingCard): CardLedgerEvent {
+        val session = requireActiveSession()
+        val context = targetContext(session, targetEventId)
+        require(context.resolved.card != card) { "Corrected card must differ from the current card" }
+        val event = newEvent(
+            sessionId = session.sessionId,
+            type = LedgerEventType.CARD_CORRECTED,
+            targetEventId = context.resolved.effectiveEventId,
+            card = card,
+            source = CardEventSource.CORRECTION,
+        )
+        val hardCase = HardCaseSample(
+            sampleId = idFactory.newId(),
+            sessionId = session.sessionId,
+            ledgerEventId = event.eventId,
+            createdAtEpochMillis = clock(),
+            sampleType = correctionType(context.resolved.card, card),
+            predictedCard = context.resolved.card,
+            actualCard = card,
+            cropReference = context.effectiveEvent?.cropReference,
+        )
+        repository.appendEventWithHardCase(event, hardCase)
+        return event
+    }
+
+    suspend fun invalidateAsFalsePositive(targetEventId: String): CardLedgerEvent {
+        val session = requireActiveSession()
+        val context = targetContext(session, targetEventId)
+        val event = newEvent(
+            sessionId = session.sessionId,
+            type = LedgerEventType.CARD_INVALIDATED,
+            targetEventId = context.resolved.effectiveEventId,
+            source = CardEventSource.CORRECTION,
+        )
+        val hardCase = HardCaseSample(
+            sampleId = idFactory.newId(),
+            sessionId = session.sessionId,
+            ledgerEventId = event.eventId,
+            createdAtEpochMillis = clock(),
+            sampleType = HardCaseType.FALSE_POSITIVE,
+            predictedCard = context.resolved.card,
+            cropReference = context.effectiveEvent?.cropReference,
+        )
+        repository.appendEventWithHardCase(event, hardCase)
+        return event
+    }
+
+    suspend fun resolvePendingReview(reviewId: String, card: PlayingCard): CardLedgerEvent {
+        val session = requireActiveSession()
+        val review = requirePendingReview(session, reviewId)
+        require(session.countStrategy != CountStrategyId.KISS_III || card.rank != CardRank.TWO || card.color != null) {
+            "KISS III requires the color of a 2 before it can be counted"
+        }
+        val event = newEvent(
+            sessionId = session.sessionId,
+            type = LedgerEventType.CARD_COMMITTED,
+            card = card,
+            source = CardEventSource.CORRECTION,
+            trackId = review.trackId,
+            rankConfidence = review.rankConfidence,
+            colorConfidence = review.colorConfidence,
+            suitConfidence = review.suitConfidence,
+            cropReference = review.cropReference,
+        )
+        val hardCase = HardCaseSample(
+            sampleId = idFactory.newId(),
+            sessionId = session.sessionId,
+            ledgerEventId = event.eventId,
+            reviewId = review.reviewId,
+            createdAtEpochMillis = clock(),
+            sampleType = HardCaseType.LOW_CONFIDENCE,
+            predictedCard = review.bestCard,
+            actualCard = card,
+            cropReference = review.cropReference,
+        )
+        repository.appendEventAndResolvePending(event, review.reviewId, clock(), hardCase)
+        return event
+    }
+
+    suspend fun discardPendingReview(reviewId: String) {
+        val session = requireActiveSession()
+        val review = requirePendingReview(session, reviewId)
+        val now = clock()
+        repository.upsertPendingReview(review.copy(state = PendingReviewState.DISCARDED, updatedAtEpochMillis = now))
+        repository.insertHardCase(
+            HardCaseSample(
+                sampleId = idFactory.newId(),
+                sessionId = session.sessionId,
+                reviewId = review.reviewId,
+                createdAtEpochMillis = now,
+                sampleType = HardCaseType.FALSE_POSITIVE,
+                predictedCard = review.bestCard,
+                cropReference = review.cropReference,
+            ),
+        )
+    }
+
     suspend fun undoLast(): CardLedgerEvent? {
         val session = requireActiveSession()
         val effective = resolver.resolve(repository.getEvents(session.sessionId))
@@ -144,9 +247,7 @@ class SessionManager(
 
     suspend fun end() {
         val current = requireActiveSession()
-        repository.upsertSession(
-            current.copy(state = SessionState.ENDED, endedAtEpochMillis = clock()),
-        )
+        repository.upsertSession(current.copy(state = SessionState.ENDED, endedAtEpochMillis = clock()))
     }
 
     private suspend fun updateState(state: SessionState) {
@@ -157,12 +258,39 @@ class SessionManager(
     private suspend fun requireActiveSession(): ShoeSession =
         requireNotNull(repository.getActiveSession()) { "No active CardViper shoe" }
 
+    private suspend fun requirePendingReview(session: ShoeSession, reviewId: String): PendingReview =
+        requireNotNull(repository.getPendingReviews(session.sessionId).firstOrNull {
+            it.reviewId == reviewId && it.state == PendingReviewState.PENDING
+        }) { "Pending review not found" }
+
+    private suspend fun targetContext(session: ShoeSession, targetEventId: String): TargetContext {
+        val events = repository.getEvents(session.sessionId)
+        val resolved = requireNotNull(
+            resolver.resolve(events).firstOrNull {
+                it.rootEventId == targetEventId || it.effectiveEventId == targetEventId
+            },
+        ) { "Card is no longer active in the ledger" }
+        return TargetContext(resolved, events.firstOrNull { it.eventId == resolved.effectiveEventId })
+    }
+
+    private fun correctionType(before: PlayingCard, after: PlayingCard): HardCaseType = when {
+        before.rank != after.rank -> HardCaseType.WRONG_RANK
+        before.suit != after.suit -> HardCaseType.WRONG_SUIT
+        before.color != after.color -> HardCaseType.WRONG_COLOR
+        else -> HardCaseType.WRONG_RANK
+    }
+
     private suspend fun newEvent(
         sessionId: String,
         type: LedgerEventType,
         targetEventId: String? = null,
         card: PlayingCard? = null,
         source: CardEventSource,
+        trackId: Long? = null,
+        rankConfidence: Float? = null,
+        colorConfidence: Float? = null,
+        suitConfidence: Float? = null,
+        cropReference: String? = null,
     ): CardLedgerEvent {
         val nextSequence = (repository.getEvents(sessionId).maxOfOrNull { it.sequenceNumber } ?: 0L) + 1L
         return CardLedgerEvent(
@@ -172,8 +300,13 @@ class SessionManager(
             timestampEpochMillis = clock(),
             eventType = type,
             targetEventId = targetEventId,
+            trackId = trackId,
             card = card,
             source = source,
+            rankConfidence = rankConfidence,
+            colorConfidence = colorConfidence,
+            suitConfidence = suitConfidence,
+            cropReference = cropReference,
         )
     }
 
@@ -207,4 +340,9 @@ class SessionManager(
         CountStrategyId.KO -> KoStrategy()
         CountStrategyId.KISS_III -> Kiss3Strategy()
     }
+
+    private data class TargetContext(
+        val resolved: ResolvedCard,
+        val effectiveEvent: CardLedgerEvent?,
+    )
 }

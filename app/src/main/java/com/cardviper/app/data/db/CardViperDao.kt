@@ -35,6 +35,12 @@ interface CardViperDao {
     @Query("SELECT COUNT(*) FROM pending_reviews WHERE sessionId = :sessionId AND state = 'PENDING'")
     suspend fun getPendingReviewCount(sessionId: String): Int
 
+    @Query("SELECT * FROM pending_reviews WHERE sessionId = :sessionId ORDER BY createdAtEpochMillis ASC, reviewId ASC")
+    fun observePendingReviews(sessionId: String): Flow<List<PendingReviewEntity>>
+
+    @Query("SELECT * FROM pending_reviews WHERE sessionId = :sessionId ORDER BY createdAtEpochMillis ASC, reviewId ASC")
+    suspend fun getPendingReviews(sessionId: String): List<PendingReviewEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertPendingReview(review: PendingReviewEntity)
 
