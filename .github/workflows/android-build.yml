@@ -24,6 +24,32 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Debug-only public AOSP test key. This gives CardViper CI artifacts a stable
+      # signer so each APK can update the previous CI APK in place. Never use this
+      # signer for a production/release build.
+      - name: Prepare stable debug signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          SIGNING_DIR="$RUNNER_TEMP/cardviper-signing"
+          mkdir -p "$SIGNING_DIR"
+          curl -fsSL "https://raw.githubusercontent.com/aosp-mirror/platform_build/main/target/product/security/testkey.pk8" \
+            -o "$SIGNING_DIR/testkey.pk8"
+          curl -fsSL "https://raw.githubusercontent.com/aosp-mirror/platform_build/main/target/product/security/testkey.x509.pem" \
+            -o "$SIGNING_DIR/testkey.x509.pem"
+          openssl pkcs8 -inform DER -in "$SIGNING_DIR/testkey.pk8" \
+            -out "$SIGNING_DIR/testkey.pem" -nocrypt
+          openssl pkcs12 -export \
+            -inkey "$SIGNING_DIR/testkey.pem" \
+            -in "$SIGNING_DIR/testkey.x509.pem" \
+            -name cardviperdebug \
+            -out "$SIGNING_DIR/cardviper-debug.p12" \
+            -passout pass:android
+          echo "CARDVIPER_KEYSTORE=$SIGNING_DIR/cardviper-debug.p12" >> "$GITHUB_ENV"
+          echo "CARDVIPER_STORE_PASSWORD=android" >> "$GITHUB_ENV"
+          echo "CARDVIPER_KEY_ALIAS=cardviperdebug" >> "$GITHUB_ENV"
+          echo "CARDVIPER_KEY_PASSWORD=android" >> "$GITHUB_ENV"
+
       - name: Set up Gradle 9.6.0
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -40,6 +66,10 @@ jobs:
 
       - name: Build debug APK
         run: ./gradlew assembleDebug
+
+      - name: Verify APK signer
+        run: |
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

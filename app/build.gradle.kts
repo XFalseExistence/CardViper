@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val cardViperCiKeystore = System.getenv("CARDVIPER_KEYSTORE")?.takeIf { it.isNotBlank() }
+
 android {
     namespace = "com.cardviper.app"
     compileSdk = 37
@@ -18,7 +20,24 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (cardViperCiKeystore != null) {
+            getByName("debug") {
+                storeFile = file(cardViperCiKeystore)
+                storePassword = System.getenv("CARDVIPER_STORE_PASSWORD") ?: "android"
+                keyAlias = System.getenv("CARDVIPER_KEY_ALIAS") ?: "cardviperdebug"
+                keyPassword = System.getenv("CARDVIPER_KEY_PASSWORD") ?: "android"
+                storeType = "PKCS12"
+            }
+        }
+    }
+
     buildTypes {
+        getByName("debug") {
+            if (cardViperCiKeystore != null) {
+                signingConfig = signingConfigs.getByName("debug")
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
