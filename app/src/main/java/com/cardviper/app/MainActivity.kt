@@ -3,34 +3,28 @@ package com.cardviper.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import com.cardviper.app.ui.CardViperApp
+import com.cardviper.app.ui.CardViperViewModel
 import com.cardviper.app.ui.theme.CardViperTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            CardViperTheme {
-                FoundationBootScreen()
+        enableEdgeToEdge()
+        val app = application as CardViperApplication
+        val factory = viewModelFactory {
+            initializer {
+                CardViperViewModel(app.sessionManager, app.sessionRepository, app.preferencesRepository)
             }
         }
-    }
-}
-
-@Composable
-private fun FoundationBootScreen() {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("CARDVIPER")
-        Text("Foundation boot OK")
+        setContent {
+            CardViperTheme {
+                CardViperApp(viewModel(factory = factory))
+            }
+        }
     }
 }
