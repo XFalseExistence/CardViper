@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 
 fun interface IdFactory {
     fun newId(): String
@@ -35,6 +36,9 @@ class SessionManager(
         startingDeckEstimate: Double? = null,
     ): ShoeSession {
         require(nominalDecks > 0) { "nominalDecks must be positive" }
+        repository.getActiveSession()?.let { previous ->
+            repository.upsertSession(previous.copy(state = SessionState.ENDED, endedAtEpochMillis = clock()))
+        }
         val strategy = strategy(strategyId)
         val startCount = when (startMode) {
             StartMode.FRESH -> strategy.initialRunningCount(nominalDecks)
@@ -79,6 +83,18 @@ class SessionManager(
             ) { events, pending -> calculateSnapshot(session, events, pending) }
         }
     }
+
+    suspend fun effectiveCards(): List<com.cardviper.app.blackjack.ResolvedCard> {
+        val session = repository.getActiveSession() ?: return emptyList()
+        return resolver.resolve(repository.getEvents(session.sessionId))
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeEffectiveCards(): Flow<List<com.cardviper.app.blackjack.ResolvedCard>> =
+        repository.observeActiveSession().flatMapLatest { session ->
+            if (session == null) flowOf(emptyList())
+            else repository.observeEvents(session.sessionId).map { resolver.resolve(it) }
+        }
 
     suspend fun switchStrategy(strategyId: CountStrategyId): ShoeSession {
         val current = requireActiveSession()
