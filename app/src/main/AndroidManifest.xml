@@ -10,6 +10,8 @@
     <application
         android:name=".CardViperApplication"
         android:allowBackup="true"
+        android:icon="@drawable/cardviper_icon"
+        android:roundIcon="@drawable/cardviper_icon"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.CardViper">
