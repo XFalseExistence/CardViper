@@ -3,34 +3,24 @@ package com.cardviper.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.lifecycle.ViewModelProvider
+import com.cardviper.app.ui.CardViperApp
+import com.cardviper.app.ui.CardViperViewModel
 import com.cardviper.app.ui.theme.CardViperTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val app = application as CardViperApplication
+        val viewModel = ViewModelProvider(
+            this,
+            CardViperViewModel.factory(app.sessionManager),
+        )[CardViperViewModel::class.java]
+
         setContent {
             CardViperTheme {
-                FoundationBootScreen()
+                CardViperApp(viewModel = viewModel)
             }
         }
-    }
-}
-
-@Composable
-private fun FoundationBootScreen() {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("CARDVIPER")
-        Text("Foundation boot OK")
     }
 }
