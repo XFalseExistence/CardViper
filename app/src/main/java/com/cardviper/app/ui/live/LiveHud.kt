@@ -36,6 +36,7 @@ fun LiveHud(
     onAddCard: () -> Unit,
     onUndo: () -> Unit,
     onReview: () -> Unit,
+    onCorrectCard: (ResolvedCard) -> Unit,
 ) {
     val session = snapshot.session
     val editable = !busy && session.state != SessionState.ENDED
@@ -61,31 +62,15 @@ fun LiveHud(
                 label = { Text("KISS III") },
             )
         }
-        if (session.nominalDecks != 6) {
-            Text("KISS III uses the six-deck profile", color = Gold, fontSize = 12.sp)
-        }
-        if (session.startMode == StartMode.MID_SHOE) {
-            Text("Joined shoe: count mode fixed because earlier cards are unknown.", color = Gold, fontSize = 12.sp)
-        }
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(18.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+        if (session.nominalDecks != 6) Text("KISS III uses the six-deck profile", color = Gold, fontSize = 12.sp)
+        if (session.startMode == StartMode.MID_SHOE) Text("Joined shoe: count mode fixed because earlier cards are unknown.", color = Gold, fontSize = 12.sp)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Column {
                 Text("RUNNING COUNT", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Gold)
-                Text(
-                    snapshot.runningCount.toString(),
-                    fontSize = 56.sp,
-                    lineHeight = 58.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF31F58A),
-                )
+                Text(snapshot.runningCount.toString(), fontSize = 56.sp, lineHeight = 58.sp, fontWeight = FontWeight.Bold, color = Color(0xFF31F58A))
             }
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    "${if (session.startMode == StartMode.FRESH) "IRC" else "START RC"}  ${session.startingRunningCount}",
-                    color = Gold,
-                )
+                Text("${if (session.startMode == StartMode.FRESH) "IRC" else "START RC"}  ${session.startingRunningCount}", color = Gold)
                 snapshot.keyCount?.let { Text("KEY  $it", color = Gold) }
                 snapshot.insuranceCount?.let { Text("INSURANCE  $it", color = Gold) }
             }
@@ -96,20 +81,13 @@ fun LiveHud(
             fontSize = 13.sp,
         )
         if (showRecentCards) {
-            Text("RECENT CARDS", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Gold)
-            RecentCardsStrip(recentCards, onReview)
+            Text("RECENT CARDS · tap to correct", fontSize = 11.sp, letterSpacing = 1.4.sp, color = Gold)
+            RecentCardsStrip(recentCards, onCorrectCard)
         }
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Button(onClick = onAddCard, enabled = editable) { Text("+ CARD") }
-            OutlinedButton(onClick = onUndo, enabled = editable && snapshot.cardsSeen > 0) {
-                Text("UNDO")
-            }
-            OutlinedButton(onClick = onReview) {
-                Text("REVIEW ${snapshot.pendingReviews}")
-            }
+            OutlinedButton(onClick = onUndo, enabled = editable && snapshot.cardsSeen > 0) { Text("UNDO") }
+            OutlinedButton(onClick = onReview) { Text("REVIEW ${snapshot.pendingReviews}") }
         }
     }
 }

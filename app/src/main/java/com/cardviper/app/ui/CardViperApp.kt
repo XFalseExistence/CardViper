@@ -31,8 +31,7 @@ fun CardViperApp(model: CardViperViewModel) {
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
         Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             if (!state.ready) {
-                Column(Modifier.align(Alignment.Center).padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                Column(Modifier.align(Alignment.Center).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("CARDVIPER", style = MaterialTheme.typography.headlineLarge)
                     CircularProgressIndicator()
@@ -58,18 +57,35 @@ fun CardViperApp(model: CardViperViewModel) {
                 composable(LIVE.route) {
                     val snapshot = state.snapshot
                     if (snapshot != null) LiveViperScreen(
-                        snapshot = snapshot, recentCards = state.recentCards, busy = state.busy,
+                        snapshot = snapshot,
+                        recentCards = state.recentCards,
+                        busy = state.busy,
                         showRecentCards = state.preferences.showRecentCards,
                         onBack = { nav.popBackStack(HOME.route, false) },
-                        onSwitchStrategy = model::switchStrategy, onAddCard = model::manualAdd,
-                        onUndo = model::undo, onPause = model::pause, onResume = { model.resume() },
+                        onSwitchStrategy = model::switchStrategy,
+                        onAddCard = model::manualAdd,
+                        onCorrectCard = model::correctCard,
+                        onInvalidateCard = model::invalidateCard,
+                        onUndo = model::undo,
+                        onPause = model::pause,
+                        onResume = { model.resume() },
                         onReview = { nav.navigate(REVIEW.route) { launchSingleTop = true } },
                         onNewShoe = { nav.navigate(NEW_SHOE.route) { launchSingleTop = true } },
-                        onEndShoe = { model.endShoe { nav.popBackStack(HOME.route, false) } })
-                    else LaunchedEffect(Unit) { nav.popBackStack(HOME.route, false) }
+                        onEndShoe = { model.endShoe { nav.popBackStack(HOME.route, false) } },
+                    ) else LaunchedEffect(Unit) { nav.popBackStack(HOME.route, false) }
                 }
                 composable(REVIEW.route) {
-                    ReviewScreen(state.snapshot, state.recentCards, onBack = { nav.popBackStack() })
+                    ReviewScreen(
+                        snapshot = state.snapshot,
+                        cards = state.recentCards,
+                        pendingReviews = state.pendingReviews,
+                        busy = state.busy,
+                        onCorrect = model::correctCard,
+                        onInvalidate = model::invalidateCard,
+                        onResolvePending = model::resolvePending,
+                        onDiscardPending = model::discardPending,
+                        onBack = { nav.popBackStack() },
+                    )
                 }
                 composable(SETTINGS.route) {
                     SettingsScreen(state.preferences, state.busy,

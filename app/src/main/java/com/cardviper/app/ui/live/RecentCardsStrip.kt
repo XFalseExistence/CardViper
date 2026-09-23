@@ -11,12 +11,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.cardviper.app.blackjack.ResolvedCard
-import com.cardviper.app.model.CardRank
 import com.cardviper.app.model.CardColor
+import com.cardviper.app.model.CardRank
 import com.cardviper.app.model.CardSuit
 
 @Composable
-fun RecentCardsStrip(cards: List<ResolvedCard>, onReview: () -> Unit) {
+fun RecentCardsStrip(cards: List<ResolvedCard>, onCard: (ResolvedCard) -> Unit) {
     Row(
         modifier = Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -26,7 +26,7 @@ fun RecentCardsStrip(cards: List<ResolvedCard>, onReview: () -> Unit) {
         } else {
             cards.takeLast(8).asReversed().forEach { resolved ->
                 AssistChip(
-                    onClick = onReview,
+                    onClick = { onCard(resolved) },
                     label = { Text(resolved.card.shortLabel()) },
                 )
             }

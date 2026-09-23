@@ -16,13 +16,13 @@ import kotlinx.coroutines.sync.withLock
 data class CardViperUiState(
     val snapshot: SessionSnapshot? = null,
     val recentCards: List<ResolvedCard> = emptyList(),
+    val pendingReviews: List<PendingReview> = emptyList(),
     val preferences: CardViperPreferences = CardViperPreferences(),
     val ready: Boolean = false,
     val busy: Boolean = false,
     val errorMessage: String? = null,
 )
 
-/** UI orchestration only. All count changes go through the existing append-only ledger. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CardViperViewModel(
     private val manager: SessionManager,
@@ -31,24 +31,27 @@ class CardViperViewModel(
 ) : ViewModel() {
     private val state = MutableStateFlow(CardViperUiState())
     val uiState: StateFlow<CardViperUiState> = state.asStateFlow()
-    // A single writer prevents two rapid taps from allocating the same event sequence.
     private val actions = Mutex()
 
     init {
         viewModelScope.launch {
             try {
+                val active = repository.observeActiveSession()
                 combine(
                     manager.observeSnapshot(),
-                    repository.observeActiveSession().flatMapLatest { session ->
+                    active.flatMapLatest { session ->
                         if (session == null) flowOf(emptyList())
                         else repository.observeEvents(session.sessionId).map { LedgerResolver().resolve(it) }
                     },
+                    active.flatMapLatest { session ->
+                        if (session == null) flowOf(emptyList()) else repository.observePendingReviews(session.sessionId)
+                    },
                     preferencesRepository?.preferences ?: flowOf(CardViperPreferences()),
-                ) { snapshot, cards, preferences -> Triple(snapshot, cards, preferences) }
-                    .collect { (snapshot, cards, preferences) ->
-                        state.update { it.copy(snapshot = snapshot, recentCards = cards,
-                            preferences = preferences, ready = true) }
-                    }
+                ) { snapshot, cards, pending, preferences ->
+                    CardViperUiState(snapshot, cards, pending, preferences, ready = true)
+                }.collect { incoming ->
+                    state.update { current -> incoming.copy(busy = current.busy, errorMessage = current.errorMessage) }
+                }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 state.update { it.copy(errorMessage = "Could not load your shoe. Reopen CardViper to retry.") }
@@ -65,28 +68,42 @@ class CardViperViewModel(
         onStarted: () -> Unit = {},
     ) = action {
         validateDecks(strategyId, decks)
-        require(startMode == StartMode.FRESH || startingRunningCount != null) {
-            "Enter a known starting running count for a mid-shoe start."
-        }
-        require(startingDeckEstimate == null || (startingDeckEstimate.isFinite() &&
-            startingDeckEstimate > 0 && startingDeckEstimate <= decks)) {
+        require(startMode == StartMode.FRESH || startingRunningCount != null) { "Enter a known starting running count for a mid-shoe start." }
+        require(startingDeckEstimate == null || (startingDeckEstimate.isFinite() && startingDeckEstimate > 0 && startingDeckEstimate <= decks)) {
             "Decks remaining must be greater than zero and no more than the shoe size."
         }
-        // Validate before ending the old shoe; its ledger remains untouched.
         if (repository.getActiveSession() != null) manager.end()
-        manager.startSession(strategyId, decks, startMode, startingRunningCount,
-            if (startMode == StartMode.MID_SHOE) startingDeckEstimate else null)
+        manager.startSession(strategyId, decks, startMode, startingRunningCount, if (startMode == StartMode.MID_SHOE) startingDeckEstimate else null)
         refresh()
         onStarted()
     }
 
     fun manualAdd(card: PlayingCard) = action {
         val session = requireNotNull(repository.getActiveSession()) { "Start a shoe first." }
-        require(session.countStrategy != CountStrategyId.KISS_III ||
-            card.rank != CardRank.TWO || card.color != null) {
+        require(session.countStrategy != CountStrategyId.KISS_III || card.rank != CardRank.TWO || card.color != null) {
             "Choose red, black, or a suit before adding a 2 in KISS III."
         }
         manager.manualAdd(card)
+        refresh()
+    }
+
+    fun correctCard(targetEventId: String, card: PlayingCard) = action {
+        manager.correctWithHardCase(targetEventId, card)
+        refresh()
+    }
+
+    fun invalidateCard(targetEventId: String) = action {
+        manager.invalidateAsFalsePositive(targetEventId)
+        refresh()
+    }
+
+    fun resolvePending(reviewId: String, card: PlayingCard) = action {
+        manager.resolvePendingReview(reviewId, card)
+        refresh()
+    }
+
+    fun discardPending(reviewId: String) = action {
+        manager.discardPendingReview(reviewId)
         refresh()
     }
 
@@ -96,7 +113,6 @@ class CardViperViewModel(
         require(session.startMode != StartMode.MID_SHOE || session.countStrategy == strategyId) {
             "A joined shoe keeps its count mode because earlier cards are unknown. Start a fresh shoe to switch systems."
         }
-        // Old KO entries may lack color. Do not silently exclude their twos in KISS III.
         if (strategyId == CountStrategyId.KISS_III) {
             val effective = LedgerResolver().resolve(repository.getEvents(session.sessionId))
             require(effective.none { it.card.rank == CardRank.TWO && it.card.color == null }) {
@@ -111,11 +127,8 @@ class CardViperViewModel(
     fun pause() = action { manager.pause(); refresh() }
     fun resume(onResumed: () -> Unit = {}) = action { manager.resume(); refresh(); onResumed() }
     fun endShoe(onEnded: () -> Unit) = action { manager.end(); refresh(); onEnded() }
-
-    // Camera lifecycle owns background suspension. A background event is not a shoe reset.
     fun onAppBackgrounded() = Unit
     fun clearError() { state.update { it.copy(errorMessage = null) } }
-
     fun setShowRecentCards(value: Boolean) = action { preferencesRepository?.setShowRecentCards(value) }
 
     private fun validateDecks(strategy: CountStrategyId, decks: Int) {
@@ -125,9 +138,9 @@ class CardViperViewModel(
 
     private suspend fun refresh() {
         val snapshot = manager.currentSnapshot()
-        val cards = snapshot?.let { LedgerResolver().resolve(repository.getEvents(it.session.sessionId)) }
-            ?: emptyList()
-        state.update { it.copy(snapshot = snapshot, recentCards = cards) }
+        val cards = snapshot?.let { LedgerResolver().resolve(repository.getEvents(it.session.sessionId)) } ?: emptyList()
+        val pending = snapshot?.let { repository.getPendingReviews(it.session.sessionId) } ?: emptyList()
+        state.update { it.copy(snapshot = snapshot, recentCards = cards, pendingReviews = pending) }
     }
 
     private fun action(block: suspend () -> Unit) {
