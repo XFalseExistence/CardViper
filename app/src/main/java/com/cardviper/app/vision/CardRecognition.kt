@@ -1,10 +1,17 @@
 package com.cardviper.app.vision
 
-import com.cardviper.app.model.PlayingCard
-
 data class CardRecognition(
-    val card: PlayingCard,
-    val rankConfidence: Float,
-    val colorConfidence: Float = 0f,
-    val suitConfidence: Float = 0f,
-)
+    val identity: CardIdentity,
+    val confidence: Float,
+    val alternatives: List<RankedIdentity> = emptyList(),
+) {
+    init {
+        require(confidence in 0f..1f) { "Classifier confidence must be between zero and one" }
+    }
+}
+
+data class RankedIdentity(val identity: CardIdentity, val confidence: Float) {
+    init {
+        require(confidence in 0f..1f) { "Alternative confidence must be between zero and one" }
+    }
+}

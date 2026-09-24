@@ -1,5 +1,5 @@
 package com.cardviper.app.vision
 
 interface CardDetector {
-    fun detect(frame: ByteArray): List<CardCandidate>
+    suspend fun detect(image: VisionImage): List<CardCandidate>
 }

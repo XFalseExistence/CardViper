@@ -1,5 +1,5 @@
 package com.cardviper.app.vision
 
 interface CardRecognizer {
-    fun recognize(crop: ByteArray): CardRecognition?
+    suspend fun recognize(crop: VisionImage): CardRecognition
 }
