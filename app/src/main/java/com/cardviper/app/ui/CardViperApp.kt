@@ -11,6 +11,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.cardviper.app.ui.home.HomeScreen
+import com.cardviper.app.ui.imagetest.ImageRecognitionViewModel
+import com.cardviper.app.ui.imagetest.ImageTestScreen
 import com.cardviper.app.ui.live.LiveViperScreen
 import com.cardviper.app.ui.navigation.CardViperDestination.*
 import com.cardviper.app.ui.review.ReviewScreen
@@ -18,7 +20,7 @@ import com.cardviper.app.ui.settings.SettingsScreen
 import com.cardviper.app.ui.shoe.NewShoeScreen
 
 @Composable
-fun CardViperApp(model: CardViperViewModel) {
+fun CardViperApp(model: CardViperViewModel, imageModel: ImageRecognitionViewModel) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val nav = rememberNavController()
     val snackbar = remember { SnackbarHostState() }
@@ -43,7 +45,16 @@ fun CardViperApp(model: CardViperViewModel) {
                         onResume = { model.resume { nav.navigate(LIVE.route) { launchSingleTop = true } } },
                         onNewShoe = { nav.navigate(NEW_SHOE.route) { launchSingleTop = true } },
                         onReview = { nav.navigate(REVIEW.route) { launchSingleTop = true } },
-                        onSettings = { nav.navigate(SETTINGS.route) { launchSingleTop = true } })
+                        onSettings = { nav.navigate(SETTINGS.route) { launchSingleTop = true } },
+                        onImageTest = { nav.navigate(IMAGE_TEST.route) { launchSingleTop = true } })
+                }
+                composable(IMAGE_TEST.route) {
+                    val imageState by imageModel.uiState.collectAsStateWithLifecycle()
+                    ImageTestScreen(
+                        state = imageState,
+                        onImageSelected = imageModel::analyze,
+                        onBack = { imageModel.reset(); nav.popBackStack() },
+                    )
                 }
                 composable(NEW_SHOE.route) {
                     NewShoeScreen(state.preferences, state.snapshot != null, state.busy,

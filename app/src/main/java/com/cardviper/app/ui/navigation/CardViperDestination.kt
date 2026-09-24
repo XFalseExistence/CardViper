@@ -6,4 +6,5 @@ enum class CardViperDestination(val route: String) {
     LIVE("live"),
     REVIEW("review"),
     SETTINGS("settings"),
+    IMAGE_TEST("image_test"),
 }

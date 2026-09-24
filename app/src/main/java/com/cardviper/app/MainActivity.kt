@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.cardviper.app.ui.CardViperApp
 import com.cardviper.app.ui.CardViperViewModel
+import com.cardviper.app.ui.imagetest.ImageRecognitionViewModel
 import com.cardviper.app.ui.theme.CardViperTheme
 
 class MainActivity : ComponentActivity() {
@@ -21,9 +22,14 @@ class MainActivity : ComponentActivity() {
                 CardViperViewModel(app.sessionManager, app.sessionRepository, app.preferencesRepository)
             }
         }
+        val imageFactory = viewModelFactory {
+            initializer {
+                ImageRecognitionViewModel(app.imageSourceLoader, app.imageRecognitionEngine)
+            }
+        }
         setContent {
             CardViperTheme {
-                CardViperApp(viewModel(factory = factory))
+                CardViperApp(viewModel(factory = factory), viewModel(factory = imageFactory))
             }
         }
     }

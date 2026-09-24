@@ -15,7 +15,7 @@ import com.cardviper.app.ui.modeLabel
 
 @Composable
 fun HomeScreen(snapshot: SessionSnapshot?, busy: Boolean, onResume: () -> Unit,
-    onNewShoe: () -> Unit, onReview: () -> Unit, onSettings: () -> Unit) {
+    onNewShoe: () -> Unit, onReview: () -> Unit, onSettings: () -> Unit, onImageTest: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally) {
@@ -38,8 +38,9 @@ fun HomeScreen(snapshot: SessionSnapshot?, busy: Boolean, onResume: () -> Unit,
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) { Text("START NEW SHOE") }
         OutlinedButton(onClick = onReview, modifier = Modifier.fillMaxWidth()) { Text("REVIEW") }
         OutlinedButton(onClick = onSettings, modifier = Modifier.fillMaxWidth()) { Text("SETTINGS") }
+        OutlinedButton(onClick = onImageTest, modifier = Modifier.fillMaxWidth()) { Text("IMAGE TEST") }
         Spacer(Modifier.height(12.dp))
-        Text("V0.1 • Offline training", style = MaterialTheme.typography.labelLarge)
+        Text("V0.2 • Offline image test", style = MaterialTheme.typography.labelLarge)
         Text("Live camera preview and manual counting. Automatic card recognition is not active.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
