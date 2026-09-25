@@ -41,3 +41,16 @@ __pycache__/
 .pytest_cache/
 /ml/build/
 /ml/dist/
+/ml/datasets/**/*.jpg
+/ml/datasets/**/*.jpeg
+/ml/datasets/**/*.png
+/ml/datasets/**/*.webp
+/ml/datasets/**/*.bmp
+/ml/datasets/**/*.zip
+/ml/datasets/**/*.tar*
+/ml/**/*.safetensors
+/ml/**/saved_model/
+/ml/**/.mypy_cache/
+/ml/**/.ruff_cache/
+/ml/.tox/
+/ml/.nox/

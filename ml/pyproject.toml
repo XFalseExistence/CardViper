@@ -16,6 +16,7 @@ test = ["pytest>=8,<10"]
 cardviper-labels = "cardviper_ml.labels:main"
 cardviper-import = "cardviper_ml.import_roboflow:main"
 cardviper-splits = "cardviper_ml.splits:main"
+cardviper-crops = "cardviper_ml.build_classifier_crops:main"
 
 [tool.setuptools.packages.find]
 include = ["cardviper_ml*"]
