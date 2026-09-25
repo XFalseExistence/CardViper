@@ -3,7 +3,6 @@
 import argparse
 import json
 import statistics
-from collections import Counter
 from pathlib import Path
 
 from .labels import LABELS
