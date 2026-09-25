@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "source_id": "playing-cards-seed",
+      "name": "Playing Cards — 52-class seed named in Phase B plan",
+      "url": null,
+      "version": null,
+      "license": null,
+      "claimed_license": "CC-BY-4.0",
+      "attribution": null,
+      "verified": false,
+      "local_root": "CARDVIPER_PLAYING_CARDS_ROOT",
+      "permitted_use": {"detector": false, "classifier": false},
+      "notes": "UNUSABLE FOR TRAINING until the exact project URL, export version, license evidence and attribution are verified. The approved plan names a CC BY 4.0 52-class Playing Cards source but supplies no unique URL/version. It supplies 52 face identities, not BACK. Add separately licensed or CardViper-owned BACK images and realistic no-card detector negatives as separately registered sources. Never use hosted trained models or Ultralytics code/weights under this dataset permission."
+    }
+  ]
+}
