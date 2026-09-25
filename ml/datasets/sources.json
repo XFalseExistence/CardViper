@@ -3,16 +3,55 @@
   "sources": [
     {
       "source_id": "playing-cards-seed",
-      "name": "Playing Cards — 52-class seed named in Phase B plan",
-      "url": null,
-      "version": null,
-      "license": null,
+      "name": "Playing Cards — 52-class seed by Joshuas Workspace",
+      "url": "https://universe.roboflow.com/joshuas-workspace/playing-cards-9gfac",
+      "version": "2",
+      "license": "CC-BY-4.0",
       "claimed_license": "CC-BY-4.0",
-      "attribution": null,
+      "attribution": "Playing Cards Dataset by Joshuas Workspace, Roboflow Universe (2024)",
+      "source_page_verified": true,
+      "source_page_verified_on": "2026-09-25",
+      "artifact_verified": false,
       "verified": false,
       "local_root": "CARDVIPER_PLAYING_CARDS_ROOT",
       "permitted_use": {"detector": false, "classifier": false},
-      "notes": "UNUSABLE FOR TRAINING until the exact project URL, export version, license evidence and attribution are verified. The approved plan names a CC BY 4.0 52-class Playing Cards source but supplies no unique URL/version. It supplies 52 face identities, not BACK. Add separately licensed or CardViper-owned BACK images and realistic no-card detector negatives as separately registered sources. Never use hosted trained models or Ultralytics code/weights under this dataset permission."
+      "project": {
+        "owner": "Joshuas Workspace",
+        "workspace_slug": "joshuas-workspace",
+        "project_slug": "playing-cards-9gfac",
+        "task": "Object Detection",
+        "source_image_count": 3596,
+        "class_count": 52,
+        "class_labels": [
+          "10C", "10D", "10H", "10S", "2C", "2D", "2H", "2S",
+          "3C", "3D", "3H", "3S", "4C", "4D", "4H", "4S",
+          "5C", "5D", "5H", "5S", "6C", "6D", "6H", "6S",
+          "7C", "7D", "7H", "7S", "8C", "8D", "8H", "8S",
+          "9C", "9D", "9H", "9S", "AC", "AD", "AH", "AS",
+          "JC", "JD", "JH", "JS", "KC", "KD", "KH", "KS",
+          "QC", "QD", "QH", "QS"
+        ]
+      },
+      "dataset_version": {
+        "name": "Initial",
+        "generated_on": "2024-09-12",
+        "total_images": 10233,
+        "split": {"train": 10014, "validation": 153, "test": 66},
+        "preprocessing": ["Resize: Stretch to 640x640"],
+        "augmentations": [
+          "Outputs per training example: 3",
+          "Brightness: Between -15% and +15%"
+        ]
+      },
+      "export": {
+        "format": "YOLOv8",
+        "download_url": "https://universe.roboflow.com/joshuas-workspace/playing-cards-9gfac/dataset/2/download/yolov8",
+        "download_requires_login": true,
+        "archive_sha256": null,
+        "class_index_order_verified": false
+      },
+      "grouping_verified": false,
+      "notes": "SOURCE PAGE VERIFIED, ARTIFACT NOT VERIFIED. The selected project and v2 metadata, full 52-face class set, CC BY 4.0 citation, preprocessing and augmentations were checked directly. The exact YOLOv8 download requires Roboflow login, so no local archive, checksum, data.yaml class-index order or augmentation-family grouping was available. This source remains UNUSABLE FOR TRAINING until a local v2 export is acquired and audited. It supplies no BACK identity. Never use hosted inference, hosted trained models, or Ultralytics code/weights under this dataset permission."
     }
   ]
 }

@@ -47,19 +47,24 @@ normalization, quantization or tensor layout is invented in B1.
 name, URL/export version, license, attribution, local root alias, explicit
 detector/classifier training permissions, verification status and notes.
 
-The approved Phase B plan names a CC BY 4.0 **52-class Playing Cards** seed, but
-provides no unique project URL/export version. Its `claimed_license` records that
-plan statement; verified `license`, URL and attribution remain unset. Both
-training permissions are **false**. Do not substitute a similarly named dataset.
-Before use in training, verify the exact source/export, license and attribution,
-record evidence (URLs/version/date and applicable restrictions) in the source
-record, and set permitted uses explicitly. `read_sources` rejects training
-permission on unverified sources. Future training entry points must call
+The selected face seed is now locked to Joshuas Workspace's `playing-cards-9gfac`
+project, dataset version 2 (`Initial`, generated 2024-09-12). Its public page
+verifies the 52 exact face labels, CC BY 4.0 citation, version preprocessing and
+augmentation recipe. The requested YOLOv8 archive still requires Roboflow login,
+so its bytes, `data.yaml` class-index order, checksums and augmentation-family
+grouping have not been audited. Overall `verified` and both training permissions
+therefore remain **false**. A source-page fact is not a verified training artifact.
+`read_sources` rejects training permission on unverified sources. Future training
+entry points must call
 `require_training_permission(sources, source_id, "detector" | "classifier")`
 for every contributing source. Import/crop preparation itself grants no rights.
 
 That seed supplies 52 face identities, **not BACK**. Register separately licensed
 or CardViper-owned BACK photos as additional sources. Include diverse card backs.
+The evaluated Goethal and Kim PEX4 candidate is not registered: its public browse
+surface exposes only four `Back` images, all in the upstream train split, with
+mixed source class names and no dependable scene/session grouping. It cannot
+satisfy the grouped 53-class train/validation/test gate.
 Detector data also needs explicitly annotated **no-card negative scenes** with
 chips, hands, felt and other distractors for false-positive control. An empty
 annotation file means a checked negative; a missing file is an error.

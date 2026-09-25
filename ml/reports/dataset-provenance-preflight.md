@@ -1,61 +1,111 @@
-# Playing-card seed provenance preflight
+# Classifier data provenance lock
 
-Status on 2026-09-24: **unresolved and unusable for training**.
+Status on 2026-09-25: **selected sources researched; classifier data NOT READY**.
 
-The Phase B plan identifies the seed only as a “CC BY 4.0 52-class Playing
-Cards dataset.” It does not record an owner, Roboflow workspace/project slug,
-dataset version, export identifier, image count, retrieval date, attribution,
-or source archive checksum. Those fields are necessary to distinguish the
-intended source from many similarly named 52-class projects.
+The face source is no longer ambiguous. It is locked to Joshuas Workspace's
+`playing-cards-9gfac` project, version 2. The source remains unusable for training
+because the exact export is login-gated and has not been acquired or audited.
+The evaluated BACK candidate is rejected as insufficient.
 
-## Direct source pages checked
+## Selected 52-face source
 
-The following canonical Roboflow Universe project pages were opened directly,
-not inferred from search snippets:
+Canonical project:
+<https://universe.roboflow.com/joshuas-workspace/playing-cards-9gfac>
 
-| Owner | Canonical project | Page facts observed | Why it cannot be selected |
-|---|---|---|---|
-| Joshuas Workspace | <https://universe.roboflow.com/joshuas-workspace/playing-cards-9gfac> | 52 classes, 3,596 images, one dataset version, CC BY 4.0 | The plan does not name this owner/slug or its version/export. |
-| Simply Connected Systems | <https://universe.roboflow.com/simply-connected-systems/playing-cards-wjh4e> | 52 classes, 23 dataset versions, CC BY 4.0; current hosted model shown against project version 23 | The plan gives no version, and this project has many materially distinct versions. |
-| plsmeow | <https://universe.roboflow.com/plsmeow/playing-cards-n7nhw-yawwz> | 52 classes, 9,900 project images, one dataset version, CC BY 4.0; hosted model reports a 27,153-image generated dataset | The counts and hosted-model derivative differ; the plan does not identify either artifact. |
-| Playing Card Recognition | <https://universe.roboflow.com/playing-card-recognition/playing-cards-pzvb1> | 52 classes, 1,412 images, one dataset version, CC BY 4.0 | The plan does not name this owner/slug or its version/export. |
-| PlaycardsDetection | <https://universe.roboflow.com/playcardsdetection/playing-cards-detection> | 52 classes, 6,680 images, one dataset version, CC BY 4.0 | Labels use mixed case and the plan does not name this source. |
+Canonical version:
+<https://universe.roboflow.com/joshuas-workspace/playing-cards-9gfac/dataset/2>
 
-These are distinct publishers and datasets even though their titles, class
-counts, and displayed licenses overlap. Selecting one would be guesswork.
+Facts verified directly from those pages:
 
-Each page displays CC BY 4.0 in its **dataset citation** and names its own
-author/publisher. That evidence applies only after the exact project and export
-are selected and recorded. A page also offering hosted inference or a trained
-model does not make hosted service access, generated datasets, or trained
-weights interchangeable with the raw dataset license. CardViper will train only
-from a locally exported dataset whose exact project/version and attribution are
-locked; it will not import a hosted model or rely on hosted inference.
+- owner/workspace: **Joshuas Workspace** / `joshuas-workspace`;
+- project slug: `playing-cards-9gfac`;
+- task: object detection;
+- project source images: 3,596;
+- one published dataset version, identified as **v2**, name `Initial`, generated
+  2024-09-12;
+- v2 materialized images: 10,233 (10,014 train, 153 validation, 66 test);
+- exactly 52 project classes: `10C`, `10D`, `10H`, `10S`, `2C`, `2D`, `2H`,
+  `2S`, `3C`, `3D`, `3H`, `3S`, `4C`, `4D`, `4H`, `4S`, `5C`, `5D`, `5H`,
+  `5S`, `6C`, `6D`, `6H`, `6S`, `7C`, `7D`, `7H`, `7S`, `8C`, `8D`, `8H`,
+  `8S`, `9C`, `9D`, `9H`, `9S`, `AC`, `AD`, `AH`, `AS`, `JC`, `JD`, `JH`,
+  `JS`, `KC`, `KD`, `KH`, `KS`, `QC`, `QD`, `QH`, `QS`;
+- license shown by the project citation: **CC BY 4.0**;
+- citation author/publisher: `Joshuas Workspace`, published through Roboflow
+  Universe, year 2024;
+- preprocessing: stretch-resize to 640x640;
+- augmentation: three outputs per training example and brightness from -15% to
+  +15%;
+- listed local export formats include YOLOv8, other YOLO variants, COCO JSON,
+  Pascal VOC XML, TFRecord, PaliGemma and CreateML JSON.
 
-## Current tracked decision
+The intended B1-compatible artifact is the version-2 YOLOv8 export:
+<https://universe.roboflow.com/joshuas-workspace/playing-cards-9gfac/dataset/2/download/yolov8>.
+Opening that exact endpoint on 2026-09-25 displayed `Login or create a free
+account`; no anonymous archive was returned. No account was created and no API
+key or secret was requested.
 
-`playing-cards-seed` remains unchanged:
+Consequently, these material artifact facts remain unverified:
 
-- `url`, `version`, `license`, and `attribution`: null
-- `claimed_license`: `CC-BY-4.0`
-- `verified`: false
-- detector/classifier permissions: false
+- archive bytes and SHA-256;
+- the export's original numeric class-index order from `data.yaml`;
+- annotation/image integrity;
+- original-to-generated image family identifiers;
+- trustworthy scene/session grouping for leakage-safe resplitting.
 
-Consequently, the classifier preflight rejects any split using this source.
+The v2 totals and augmentation recipe prove generated variants exist. CardViper
+must not trust the upstream 98/1/1 image split as independent evidence. Generated
+variants and any near-duplicate originals must share one CardViper group. Until a
+local archive supports that audit, `playing-cards-seed` remains `verified: false`
+with detector and classifier permissions false.
 
-## Evidence required to unlock it
+## Evaluated BACK candidate
 
-Provide or recover all of the following from the dataset-selection record or
-the exact local export:
+Project:
+<https://universe.roboflow.com/goethal-and-kim-pex4/playing-cards-8ycnm-th85w>
 
-1. canonical project URL and owner/workspace;
-2. immutable project/version or export identifier and retrieval date;
-3. source-page license and required attribution text;
-4. original export class-index list and export format;
-5. archive or normalized-image checksums sufficient to connect local files to
-   that version;
-6. confirmation that dataset reuse permits the intended local classifier and,
-   separately, detector training.
+Version:
+<https://universe.roboflow.com/goethal-and-kim-pex4/playing-cards-8ycnm-th85w/dataset/1>
 
-Only then should `sources.json` be updated and the two training permissions be
-decided independently. No B2 training should start before that lock.
+Verified public facts:
+
+- owner/workspace: **Goethal and Kim PEX4** / `goethal-and-kim-pex4`;
+- project slug: `playing-cards-8ycnm-th85w`;
+- task: object detection;
+- project/version: 149 images, v1 generated 2025-11-18;
+- split: 105 train, 29 validation, 15 test;
+- license displayed by the project citation: **Public Domain**;
+- no preprocessing and no augmentation reported;
+- the class filter exposes a literal `Back` annotation identity in addition to
+  rank labels and other mixed classes;
+- filtering the public image browser for exact class `Back` returned four images,
+  all assigned to the upstream train split;
+- one inspected multi-card example contained exactly one `Back` box among face
+  boxes; filenames indicate only a very small set of source examples;
+- the exact YOLOv8 endpoint is also login-gated.
+
+This candidate is **rejected** as `playing-cards-back-seed`. Four visible examples,
+all in one upstream split, do not provide adequate BACK diversity or the three
+independent grouped partitions required by CardViper's preflight. The project also
+shows inconsistent class surfaces (`CardBack` in the overview versus `Back`,
+`Card`, and `null` in the image filter), and provides no scene/session lineage.
+CardViper therefore does not register it or map any non-`Back` alias to `BACK`.
+
+## Exact unblock sequence
+
+1. A user with lawful Roboflow access downloads the selected face project **v2**
+   as YOLOv8 and places the archive/extracted export under ignored
+   `ml/local/sources/playing-cards-seed/`.
+2. Record the archive SHA-256 and retain its original `data.yaml`.
+3. Verify the 52 numeric class indices against the exact canonical face set.
+4. Audit hashes and perceptual near-duplicates, then assign conservative
+   source/scene/session groups so every original and generated variant stays
+   together.
+5. Acquire a separately licensed or CardViper-owned BACK corpus with independent
+   train/validation/test capture groups and diverse back designs.
+6. Normalize, combine, generate new CardViper grouped splits and crops, then run
+   `cardviper-classifier-preflight`.
+7. Promote sources and enable training permissions only after the preflight is
+   `READY` with every one of the 53 labels present in train, validation and test.
+
+No raw dataset, model binary, generated split or machine-specific path is tracked
+by this checkpoint. No classifier training or tensor contract can begin yet.

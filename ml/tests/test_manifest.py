@@ -127,6 +127,16 @@ def test_source_metadata_blocks_unverified_training(tmp_path):
     sources = read_sources(Path(__file__).parents[1] / "datasets/sources.json")
     seed = sources["playing-cards-seed"]
     assert seed["claimed_license"] == "CC-BY-4.0"
+    assert seed["url"] == "https://universe.roboflow.com/joshuas-workspace/playing-cards-9gfac"
+    assert seed["version"] == "2"
+    assert seed["license"] == "CC-BY-4.0"
+    assert seed["attribution"] == "Playing Cards Dataset by Joshuas Workspace, Roboflow Universe (2024)"
+    assert seed["source_page_verified"] is True
+    assert seed["artifact_verified"] is False
+    assert seed["export"]["format"] == "YOLOv8"
+    assert seed["export"]["download_requires_login"] is True
+    assert seed["export"]["class_index_order_verified"] is False
+    assert seed["grouping_verified"] is False
     assert not seed["verified"]
     for purpose in ("detector", "classifier"):
         with pytest.raises(ValueError, match="verified"):
