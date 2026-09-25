@@ -209,3 +209,29 @@ explicit approval and deliberate ignore-rule changes, not an accidental add.
 Before a checkpoint, inspect `git status --short`, `git diff --check`, and the
 staged file list. **B1 does not train the classifier/detector or start Android
 runtime integration.** B2 requires explicit approval and verified data provenance.
+
+## Classifier readiness gate
+
+Before B2 training, validate the locked split directory and every contributing
+source license/permission:
+
+```sh
+cardviper-classifier-preflight \
+  --sources ml/datasets/sources.json \
+  --splits ml/local/splits \
+  --json ml/local/classifier-preflight.json \
+  --markdown ml/local/classifier-preflight.md
+```
+
+The command exits zero only for `READY`; `NOT READY` exits 2. It reuses the B1
+split validator, rejects unverified classifier sources, duplicates, leakage and
+held-out data in train/validation/test, then requires all 53 classes in each of
+train, validation and test. That per-split requirement supports B2’s planned
+per-class recall; it is a coverage gate, not a balance requirement. The report
+quantifies images, annotations, independent groups, class distribution, BACK,
+held-out images and permitted source IDs in JSON and Markdown.
+
+See [dataset provenance preflight](reports/dataset-provenance-preflight.md) for
+why the current 52-class seed remains blocked, and the
+[CardViper-owned data plan](reports/cardviper-owned-data-plan.md) for BACK and
+realistic detector-negative capture requirements.
