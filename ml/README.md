@@ -278,10 +278,13 @@ uses validation loss, with separate frozen-head and fine-tuning histories.
 ```sh
 cardviper-train-classifier --sources ml/datasets/sources.json \
   --splits ml/local/splits --crops ml/local/crops \
+  --roots ml/local/roots.json \
   --output ml/local/classifier-run
 cardviper-eval-classifier \
   --model ml/local/classifier-run/stage1_best.keras \
   --test-crops ml/local/crops/test \
+  --test-split-manifest ml/local/splits/test.jsonl \
+  --roots ml/local/roots.json \
   --training-metadata ml/local/classifier-run/training_metadata.json \
   --output-prefix ml/local/classifier-run/test-evaluation
 cardviper-export-classifier \
@@ -291,8 +294,9 @@ cardviper-export-classifier \
 ```
 
 Use the actual `selected_checkpoint` path printed by the trainer; the example
-`stage1_best.keras` is only one possible outcome. Evaluation checks that the
-path is selected and records the resulting TEST report in training metadata.
+`stage1_best.keras` is only one possible outcome. Evaluation checks the selected
+checkpoint, reserved TEST split, and source pixels before recording the report
+in training metadata.
 Export requires that report, then writes a float `.tflite`, canonical
 `labels.txt` and `classifier.json` derived from inspecting those actual bytes.
 TensorFlow 2.16/Keras 3 exports a forward-only SavedModel before conversion,

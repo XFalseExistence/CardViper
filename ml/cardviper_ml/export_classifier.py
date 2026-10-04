@@ -6,6 +6,7 @@ from pathlib import Path
 import tempfile
 
 from .labels import LABELS
+from .classifier_evidence import validate_export_evidence
 
 
 def write_labels(path):
@@ -25,13 +26,8 @@ def export_model(model_path, output_directory, training_metadata, *, smoke=False
     if smoke:
         if metadata.get("evaluation_report") != "SYNTHETIC-SMOKE-ONLY":
             raise ValueError("Synthetic smoke export must be explicitly labeled")
-    elif (metadata.get("preflight_status") != "READY" or
-          Path(metadata.get("selected_checkpoint", "")).resolve() != model_path.resolve() or
-          not metadata.get("evaluation_report") or
-          not Path(metadata["evaluation_report"]).is_file()):
-        raise ValueError("Real export requires READY provenance, selected checkpoint and test evaluation")
-    if not smoke and json.loads(Path(metadata["evaluation_report"]).read_text(encoding="utf-8")).get("evaluated_split") != "test":
-        raise ValueError("Real export requires a final TEST evaluation report")
+    else:
+        validate_export_evidence(metadata, model_path)
     model = tf.keras.models.load_model(model_path)
     if model.output_shape[-1] != 53:
         raise ValueError("Selected Keras model is not 53-way")
@@ -47,7 +43,7 @@ def export_model(model_path, output_directory, training_metadata, *, smoke=False
         tflite.write_bytes(converter.convert())
     labels = write_labels(output / "labels.txt")
     inspect_tflite(tflite)  # Reject an unusable or wrong-width export.
-    build_contract(tflite, metadata, labels, metadata.get("evaluation_report"), output / "classifier.json")
+    build_contract(tflite, metadata, labels, metadata.get("evaluation_report"), output / "classifier.json", smoke=smoke)
     return tflite
 
 

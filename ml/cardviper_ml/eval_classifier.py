@@ -2,10 +2,12 @@
 
 import argparse
 from collections import Counter
+import hashlib
 import json
 from pathlib import Path
 
 from .labels import LABELS
+from .manifest import read_manifest
 
 
 def _safe_div(a, b):
@@ -75,20 +77,42 @@ def render_markdown(report):
     return "\n".join(lines) + "\n"
 
 
-def evaluate_model(model_path, crop_directory, output_prefix, training_metadata):
+def validate_test_provenance(metadata, model_path, test_split_manifest, crop_manifest_path, samples):
+    model_path = Path(model_path)
+    if metadata.get("preflight_status") != "READY" or Path(metadata.get("selected_checkpoint", "")).resolve() != model_path.resolve():
+        raise ValueError("TEST evaluation requires the selected checkpoint from READY training")
+    model_sha = hashlib.sha256(model_path.read_bytes()).hexdigest()
+    if model_sha != metadata.get("selected_checkpoint_sha256"):
+        raise ValueError("Selected checkpoint bytes differ from training metadata")
+    split_sha = hashlib.sha256(Path(test_split_manifest).read_bytes()).hexdigest()
+    if split_sha != metadata.get("split_manifest_sha256", {}).get("test"):
+        raise ValueError("TEST split manifest differs from training metadata")
+    expected = {(row.source_id, row.image_sha256, obj.annotation_id, obj.label)
+                for row in read_manifest(test_split_manifest) for obj in row.objects}
+    actual = [(row.source_id, row.source_image_sha256, row.annotation_id, row.label) for row in samples]
+    if len(actual) != len(set(actual)) or set(actual) != expected:
+        raise ValueError("TEST crop coverage differs from split annotations")
+    return {"model_sha256": model_sha, "test_split_manifest_sha256": split_sha,
+            "test_crop_manifest_sha256": hashlib.sha256(Path(crop_manifest_path).read_bytes()).hexdigest()}
+
+
+def evaluate_model(model_path, crop_directory, test_split_manifest, roots_path, output_prefix, training_metadata):
     import numpy as np
     import tensorflow as tf
-    from .classifier_dataset import load_crop_split, rgb_array
+    from .classifier_dataset import verify_crop_provenance, rgb_array
     metadata_path = Path(training_metadata)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    if metadata.get("preflight_status") != "READY" or Path(metadata.get("selected_checkpoint", "")).resolve() != Path(model_path).resolve():
-        raise ValueError("TEST evaluation requires a selected checkpoint from READY training")
-    samples = load_crop_split(crop_directory, "test")
+    test_rows = read_manifest(test_split_manifest)
+    roots = json.loads(Path(roots_path).read_text(encoding="utf-8"))
+    samples = verify_crop_provenance(crop_directory, test_rows, roots, "test")
+    provenance = validate_test_provenance(metadata, model_path, test_split_manifest,
+                                          Path(crop_directory) / "crops.jsonl", samples)
     model = tf.keras.models.load_model(model_path)
     size = int(model.input_shape[1])
     rows = np.asarray([np.asarray(rgb_array(sample, size), dtype=np.float32) for sample in samples])
     scores = model.predict(rows, verbose=0)
     report = evaluate_scores([sample.label for sample in samples], scores.tolist(), split="test")
+    report.update(provenance)
     output_prefix = Path(output_prefix)
     report_path = output_prefix.with_suffix(".json")
     report_path.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n")
@@ -102,10 +126,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True, type=Path)
     parser.add_argument("--test-crops", required=True, type=Path)
+    parser.add_argument("--test-split-manifest", required=True, type=Path)
+    parser.add_argument("--roots", required=True, type=Path)
     parser.add_argument("--output-prefix", required=True, type=Path)
     parser.add_argument("--training-metadata", required=True, type=Path)
     args = parser.parse_args()
-    report = evaluate_model(args.model, args.test_crops, args.output_prefix, args.training_metadata)
+    report = evaluate_model(args.model, args.test_crops, args.test_split_manifest, args.roots,
+                            args.output_prefix, args.training_metadata)
     print(f"Test top-1: {report['top1_accuracy']:.4f}")
 
 

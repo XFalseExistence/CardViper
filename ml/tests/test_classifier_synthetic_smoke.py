@@ -9,7 +9,7 @@ from PIL import Image
 def test_synthetic_model_fit_export_inspection_and_contract(tmp_path):
     tf = pytest.importorskip("tensorflow")
     np = pytest.importorskip("numpy")
-    from cardviper_ml.classifier_model import ModelConfig, build_model, model_spec
+    from cardviper_ml.classifier_model import ModelConfig, build_model, compile_stage, model_spec
     from cardviper_ml.inspect_litert import inspect_tflite
     from cardviper_ml.classifier_contract import build_contract
     from cardviper_ml.export_classifier import export_model
@@ -33,10 +33,12 @@ def test_synthetic_model_fit_export_inspection_and_contract(tmp_path):
                           "crop_path": f"{index}.png"})
     (crop_root / "crops.jsonl").write_text("".join(json.dumps(row) + "\n" for row in crop_rows))
     samples = load_crop_split(crop_root, "train")
-    model, _ = build_model(config, weights=None)
+    model, backbone = build_model(config, weights=None)
     pixels = np.asarray([np.asarray(augment_image(rgb_array(sample, 96), split="train", seed=index), dtype=np.float32)
                          for index, sample in enumerate(samples)])
     labels = np.asarray([sample.label_index for sample in samples], dtype=np.int32)
+    model.fit(pixels, labels, batch_size=2, epochs=1, verbose=0)
+    compile_stage(model, backbone, config, fine_tune=True)
     model.fit(pixels, labels, batch_size=2, epochs=1, verbose=0)
     scores = model.predict(pixels, verbose=0).tolist()
     synthetic_evaluation = evaluate_scores([sample.label for sample in samples], scores, split="train")
@@ -49,7 +51,15 @@ def test_synthetic_model_fit_export_inspection_and_contract(tmp_path):
     path = export_model(keras_path, tmp_path / "export", metadata_path, smoke=True)
     inspected = inspect_tflite(path)
     assert inspected["output_tensors"][0]["shape"][-1] == 53
-    contract = build_contract(path, model_spec(config), path.parent / "labels.txt", "SYNTHETIC-SMOKE-ONLY")
+    interpreter = tf.lite.Interpreter(model_path=str(path))
+    interpreter.allocate_tensors()
+    input_tensor = interpreter.get_input_details()[0]
+    output_tensor = interpreter.get_output_details()[0]
+    interpreter.set_tensor(input_tensor["index"], pixels[:1])
+    interpreter.invoke()
+    lite_scores = interpreter.get_tensor(output_tensor["index"])
+    np.testing.assert_allclose(lite_scores, np.asarray(scores[:1]), rtol=1e-3, atol=1e-3)
+    contract = build_contract(path, model_spec(config), path.parent / "labels.txt", "SYNTHETIC-SMOKE-ONLY", smoke=True)
     assert contract["back_index"] == 52
     assert contract["model_sha256"] == inspected["model_sha256"]
     assert contract["index_to_label"]["0"] == "AC"

@@ -3,7 +3,7 @@ import json
 from PIL import Image
 import pytest
 
-from cardviper_ml.classifier_dataset import load_crop_split, seeded_batches
+from cardviper_ml.classifier_dataset import load_crop_split, seeded_batches, verify_crop_provenance
 
 
 def test_manifest_controls_label_and_seeded_batch_order(tmp_path):
@@ -44,3 +44,23 @@ def test_group_reserved_holdout_accepts_member_without_individual_held_out_flag(
                label="BACK", crop_bbox=[0, 0, 8, 8], padding=0, crop_path="card.png")
     (root / "crops.jsonl").write_text(json.dumps(row) + "\n")
     assert load_crop_split(root, "holdout")[0].label == "BACK"
+
+
+def test_crop_provenance_checks_geometry_filename_and_actual_pixels(tmp_path):
+    import hashlib
+    from cardviper_ml.build_classifier_crops import build_crops
+    from cardviper_ml.manifest import Annotation, ImageRecord
+    root = tmp_path / "source"
+    root.mkdir()
+    source = root / "a.png"
+    Image.new("RGB", (12, 12), "red").save(source)
+    row = ImageRecord(source_id="owned", scene_id="scene-1", image_path="a.png",
+                      width=12, height=12, image_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                      annotation_path="labels/a.txt", objects=(Annotation("1", "AC", (2, 2, 8, 8)),))
+    crops = tmp_path / "train"
+    build_crops([row], {"owned": root}, crops, padding=.1)
+    assert len(verify_crop_provenance(crops, [row], {"owned": root}, "train")) == 1
+    path = next(crops.glob("*.png"))
+    Image.new("RGB", (8, 8), "blue").save(path)
+    with pytest.raises(ValueError, match="pixels"):
+        verify_crop_provenance(crops, [row], {"owned": root}, "train")

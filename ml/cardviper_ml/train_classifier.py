@@ -9,7 +9,7 @@ from pathlib import Path
 import time
 
 from .classifier_config import ClassifierDataPaths, ClassifierTrainingConfig
-from .classifier_dataset import load_crop_split, rgb_array, seeded_batches
+from .classifier_dataset import rgb_array, seeded_batches, verify_crop_provenance
 from .classifier_augmentation import augment_image
 from .classifier_model import ModelConfig, build_model, compile_stage, model_spec
 from .classifier_preflight import audit_classifier_data
@@ -61,7 +61,7 @@ def _dataset(samples, *, split, config, batch_size):
     return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
 
-def train_classifier(sources_path, splits_directory, crop_root, output_directory, *,
+def train_classifier(sources_path, splits_directory, crop_root, roots_path, output_directory, *,
                      config=ModelConfig(), batch_size=32, head_epochs=10, fine_tune_epochs=10):
     """Return metadata; test/holdout crops are never opened during fitting."""
     if batch_size <= 0 or head_epochs <= 0 or fine_tune_epochs <= 0:
@@ -71,13 +71,9 @@ def train_classifier(sources_path, splits_directory, crop_root, output_directory
     paths = ClassifierDataPaths.from_split_directory(splits_directory)
     ClassifierTrainingConfig(labels=LABELS, declared_output_width=53, seed=config.seed, data=paths)
     crop_root = Path(crop_root)
-    train = load_crop_split(crop_root / "train", "train")
-    val = load_crop_split(crop_root / "val", "val")
-    for split, samples in (("train", train), ("val", val)):
-        actual_list = [_crop_key(row) for row in samples]
-        if len(actual_list) != len(set(actual_list)):
-            raise ValueError(f"Duplicate {split} crop provenance")
-        validate_crop_coverage(_expected_crops(splits[split]), set(actual_list))
+    roots = json.loads(Path(roots_path).read_text(encoding="utf-8"))
+    train = verify_crop_provenance(crop_root / "train", splits["train"], roots, "train")
+    val = verify_crop_provenance(crop_root / "val", splits["val"], roots, "val")
     if not train or not val:
         raise ValueError("Train and validation crops must be nonempty")
     import tensorflow as tf
@@ -108,6 +104,7 @@ def train_classifier(sources_path, splits_directory, crop_root, output_directory
     labels_bytes = ("\n".join(LABELS) + "\n").encode("utf-8")
     metadata = {**model_spec(config), "schema_version": 1,
                 "selected_checkpoint": str(chosen), "selected_by": "minimum validation loss",
+                "selected_checkpoint_sha256": hashlib.sha256(chosen.read_bytes()).hexdigest(),
                 "elapsed_seconds": time.monotonic() - started,
                 "batch_size": batch_size, "head_epochs_limit": head_epochs,
                 "fine_tune_epochs_limit": fine_tune_epochs,
@@ -129,12 +126,13 @@ def main():
     parser.add_argument("--sources", type=Path, required=True)
     parser.add_argument("--splits", type=Path, required=True)
     parser.add_argument("--crops", type=Path, required=True)
+    parser.add_argument("--roots", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--input-size", type=int, default=224)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--batch-size", type=int, default=32)
     args = parser.parse_args()
-    metadata = train_classifier(args.sources, args.splits, args.crops, args.output,
+    metadata = train_classifier(args.sources, args.splits, args.crops, args.roots, args.output,
                                 config=ModelConfig(input_size=args.input_size, seed=args.seed), batch_size=args.batch_size)
     print(f"Selected checkpoint: {metadata['selected_checkpoint']}")
 

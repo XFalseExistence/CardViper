@@ -39,8 +39,12 @@ def collect_rows(root):
     """Read image/annotation evidence without assigning independent groups."""
     root = Path(root)
     rows = []
-    for image in sorted(p for p in root.rglob("*") if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp"} and p.parent.name == "images"):
-        label = image.parent.parent / "labels" / (image.stem + ".txt")
+    for image in sorted(p for p in root.rglob("*") if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".bmp"} and "images" in p.relative_to(root).parts):
+        parts = image.relative_to(root).parts
+        marker = parts.index("images")
+        split_root = root.joinpath(*parts[:marker])
+        nested_name = Path(*parts[marker + 1:]).with_suffix(".txt")
+        label = split_root / "labels" / nested_name
         with Image.open(image) as raster:
             width, height = raster.size
             raster.verify()
