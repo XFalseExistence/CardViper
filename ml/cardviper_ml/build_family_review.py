@@ -224,35 +224,76 @@ button,input{font:inherit;margin:.25rem;padding:.45rem}button{cursor:pointer}.ro
 <div class="row"><label>Reviewer <input id="reviewer"></label><label>Review date <input id="date" type="date"></label>
 <label>Method <input id="method" size="42" placeholder="How provenance was checked"></label></div>
 <label><input type="checkbox" id="approved">I explicitly approve these decisions after reviewing the source images and provenance.</label>
+<p id="progress"></p><label>Filter <select id="filter"><option value="all">all</option><option value="strong-same">strong-same</option>
+<option value="ambiguous">ambiguous</option><option value="strong-independent">strong-independent</option>
+<option value="undecided">undecided</option></select></label>
 <button id="previous">Previous</button><span id="position"></span><button id="next">Next</button>
-<h2 id="title"></h2><p id="evidence"></p><div class="row" id="pair"></div>
+<button id="next-unresolved">Next unresolved</button>
+<h2 id="title"></h2><p id="recommendation"></p><p id="evidence"></p><div class="row" id="pair"></div>
 <h3>All images in this candidate bucket, grouped by current family</h3><div id="groups"></div>
 <p><button data-decision="same_family">S: SAME FAMILY</button><button data-decision="independent">I: INDEPENDENT</button>
-<button data-decision="unsure">U: UNSURE</button></p><label>Decision notes <input id="notes" size="75"></label>
-<p><button id="download">Download decisions JSON</button> <small>Keep this JSON beside the pack; apply it with cardviper-apply-family-review.</small></p>
+<button data-decision="unsure">U: UNSURE</button><button id="accept-recommendation">Accept shown recommendation</button></p>
+<p id="saved-decision"></p><label>Decision notes <input id="notes" size="75"></label>
+<p><button id="download">Download decisions JSON</button><label>Resume from decisions JSON <input id="load" type="file" accept="application/json,.json"></label>
+<small>Keep the exported JSON beside the pack; apply it with cardviper-apply-family-review.</small></p>
 <script>const pack = """ + embedded + """;
 let at=0;const choices=Object.fromEntries(pack.candidates.map(c=>[c.candidate_id,{candidate_id:c.candidate_id,decision:'unsure',notes:''}]));
 const q=id=>document.getElementById(id);function node(tag,text){const x=document.createElement(tag);x.textContent=text;return x}
 function image(src){const x=document.createElement('img');x.src=src;x.loading='lazy';return x}
-function show(){const c=pack.candidates[at];q('position').textContent=(at+1)+' / '+pack.candidates.length;
+const recommendations={STRONG_SAME_FAMILY_CANDIDATE:'same_family',STRONG_INDEPENDENT_CANDIDATE:'independent'};
+function unresolvedCount(){return pack.candidates.filter(c=>choices[c.candidate_id].decision==='unsure').length}
+function matches(c){const f=q('filter').value;return f==='all'||
+(f==='undecided'&&choices[c.candidate_id].decision==='unsure')||
+(f==='strong-same'&&c.classification==='STRONG_SAME_FAMILY_CANDIDATE')||
+(f==='ambiguous'&&c.classification==='AMBIGUOUS')||
+(f==='strong-independent'&&c.classification==='STRONG_INDEPENDENT_CANDIDATE')}
+function show(){const c=pack.candidates[at];if(!c)return;q('position').textContent=(at+1)+' / '+pack.candidates.length;
+const remaining=unresolvedCount();q('progress').textContent=(pack.candidates.length-remaining)+' reviewed / '+pack.candidates.length+'; '+remaining+' unresolved';
 q('title').textContent=c.classification+' • '+c.group_count+' groups • '+c.images.length+' images';
+const suggestion=recommendations[c.classification];q('recommendation').textContent='RECOMMENDATION: '+
+(suggestion==='same_family'?'SAME FAMILY':suggestion==='independent'?'INDEPENDENT':'NO RECOMMENDATION')+
+'. Machine suggestion only; you must inspect the images and choose explicitly.';
+q('accept-recommendation').disabled=!suggestion;
 q('evidence').textContent='Closest dHash '+c.min_dhash_distance+'; median '+c.median_dhash_distance+
 '; max rounded-box geometry overlap '+c.max_geometry_jaccard+'. Same / independent decisions apply to every cross-group relationship shown in this bucket.';
 q('pair').replaceChildren();for(let j=0;j<2;j++){let x=node('div',c.closest_pair.paths[j]);x.className='card';x.prepend(image(c.closest_pair.thumbnails[j]));q('pair').append(x)}
 q('groups').replaceChildren();const groups={};for(const v of c.images)(groups[v.group_id]??=[]).push(v);
 for(const [id,items] of Object.entries(groups)){let box=node('div','Family '+id+' ('+items.length+')');box.className='card';let gallery=document.createElement('div');gallery.className='gallery';
 for(const v of items){let t=node('div',v.path+' | split '+v.split+' | lineage '+v.lineage_key+' | video '+(v.video_key||'none')+' | labels '+v.labels.join(',')+' | objects '+v.object_count+' | '+v.width+'×'+v.height);t.className='thumb';t.prepend(image(v.thumbnail));gallery.append(t)}box.append(gallery);q('groups').append(box)}
-q('notes').value=choices[c.candidate_id].notes;document.querySelectorAll('[data-decision]').forEach(b=>b.style.fontWeight=choices[c.candidate_id].decision===b.dataset.decision?'bold':'normal')}
+q('notes').value=choices[c.candidate_id].notes;q('saved-decision').textContent='Saved decision: '+choices[c.candidate_id].decision.toUpperCase();
+document.querySelectorAll('[data-decision]').forEach(b=>{const selected=choices[c.candidate_id].decision===b.dataset.decision;
+b.style.fontWeight=selected?'bold':'normal';b.setAttribute('aria-pressed',String(selected))})}
 function saveNotes(){choices[pack.candidates[at].candidate_id].notes=q('notes').value}
-q('previous').onclick=()=>{saveNotes();at=Math.max(0,at-1);show()};q('next').onclick=()=>{saveNotes();at=Math.min(pack.candidates.length-1,at+1);show()};
-document.querySelectorAll('[data-decision]').forEach(b=>b.onclick=()=>{saveNotes();choices[pack.candidates[at].candidate_id].decision=b.dataset.decision;show()});
-document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;const d={s:'same_family',i:'independent',u:'unsure'}[e.key.toLowerCase()];if(d){choices[pack.candidates[at].candidate_id].decision=d;show()}});
-q('download').onclick=()=>{saveNotes();const out={schema_version:1,source_id:pack.source_id,archive_sha256:pack.archive_sha256,
+function move(direction){saveNotes();for(let n=1;n<=pack.candidates.length;n++){const i=(at+direction*n+pack.candidates.length)%pack.candidates.length;
+if(matches(pack.candidates[i])){at=i;show();return}}alert('No candidates match this filter.')}
+q('previous').onclick=()=>move(-1);q('next').onclick=()=>move(1);q('filter').onchange=()=>{if(!matches(pack.candidates[at]))move(1);else show()};
+q('next-unresolved').onclick=()=>{saveNotes();for(let n=1;n<=pack.candidates.length;n++){const i=(at+n)%pack.candidates.length;
+if(choices[pack.candidates[i].candidate_id].decision==='unsure'){at=i;q('filter').value='all';show();return}}alert('No unresolved candidates remain.')};
+function decide(value){saveNotes();choices[pack.candidates[at].candidate_id].decision=value;show()}
+document.querySelectorAll('[data-decision]').forEach(b=>b.onclick=()=>decide(b.dataset.decision));
+q('accept-recommendation').onclick=()=>{const choice=recommendations[pack.candidates[at].classification];if(choice)decide(choice)};
+document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;
+const d={s:'same_family',i:'independent',u:'unsure'}[e.key.toLowerCase()];if(d)decide(d)});
+q('approved').onchange=()=>{if(q('approved').checked&&unresolvedCount()){q('approved').checked=false;
+alert('Completion warning: resolve every unsure decision before approval.')}};
+q('download').onclick=()=>{saveNotes();if(q('approved').checked&&unresolvedCount()){
+alert('Cannot export approved=true while unresolved decisions remain.');return}const out={schema_version:1,source_id:pack.source_id,archive_sha256:pack.archive_sha256,
 artifact_fingerprint:pack.artifact_fingerprint,artifact_audit_sha256:pack.artifact_audit_sha256,
 family_audit_sha256:pack.family_audit_sha256,base_proposal_sha256:pack.base_proposal_sha256,
 reviewer:q('reviewer').value,review_date:q('date').value,method:q('method').value,approved:q('approved').checked,
 decisions:pack.candidates.map(c=>choices[c.candidate_id])};const a=document.createElement('a');
-a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)+'\\n'],{type:'application/json'}));a.download='review-decisions.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};show();</script></html>"""
+a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)+'\\n'],{type:'application/json'}));a.download='review-decisions.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+q('load').onchange=async()=>{try{const raw=JSON.parse(await q('load').files[0].text());
+for(const key of ['archive_sha256','artifact_fingerprint','artifact_audit_sha256','family_audit_sha256','base_proposal_sha256'])
+if(raw[key]!==pack[key])throw Error('Stale or mismatched '+key);
+if(!Array.isArray(raw.decisions)||raw.decisions.length!==pack.candidates.length)throw Error('Incomplete decisions');
+const ids=new Set(pack.candidates.map(c=>c.candidate_id));const seen=new Set();
+for(const d of raw.decisions){if(!ids.has(d.candidate_id)||seen.has(d.candidate_id)||!['same_family','independent','unsure'].includes(d.decision))
+throw Error('Invalid candidate decision');seen.add(d.candidate_id)}
+for(const d of raw.decisions)choices[d.candidate_id]={candidate_id:d.candidate_id,decision:d.decision,notes:d.notes||''};
+q('reviewer').value=raw.reviewer||'';q('date').value=raw.review_date||'';q('method').value=raw.method||'';
+q('approved').checked=raw.approved===true&&unresolvedCount()===0;show()}
+catch(error){alert('Cannot load decisions: '+error.message)}};show();</script></html>"""
 
 
 def build_review_pack(archive, audit_path, family_path, proposal_path, output):

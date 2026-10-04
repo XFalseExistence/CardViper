@@ -36,6 +36,8 @@ def apply_review(archive, audit_path, family_path, proposal_path, review_path, o
     if review.get("approved") is not False and review.get("approved") is not True:
         raise ValueError("Human approval must be an explicit boolean")
     if review["approved"]:
+        if any(entry["decision"] == "unsure" for entry in choices):
+            raise ValueError("Cannot approve a review with unsure decisions")
         nonempty(review.get("reviewer"), "reviewer")
         nonempty(review.get("method"), "review method")
         try:

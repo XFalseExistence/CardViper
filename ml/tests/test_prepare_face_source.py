@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import zipfile
+import shutil
 
 from PIL import Image
 import yaml
@@ -87,6 +88,56 @@ def test_proposal_unions_distinct_frames_of_one_video(tmp_path):
     assert len(set(report["group_proposal"]["groups"].values())) == 1
     assert report["family_audit"]["unresolved_cross_group_candidate_count"] >= 0
     assert report["family_audit"]["grouping_ready"] is False
+
+
+def test_exact_duplicates_in_one_family_do_not_block_review_or_normalization(tmp_path):
+    root = tmp_path / "face"
+    paths = _fixture(root)
+    shutil.copyfile(root / paths[0], root / paths[1])
+    draft, _, _ = face.prepare_face_source(root, tmp_path / "unused", dry_run=True)
+    assert len(draft["family_audit"]["exact_duplicates"]) == 1
+    assert draft["family_audit"]["exact_duplicate_crossing_count"] == 0
+    assert draft["group_proposal"] is not None
+    assert any("reviewed family-group map" in reason for reason in draft["reasons"])
+    reviewed = tmp_path / "groups.json"
+    _review(reviewed, {path: "one-scene" for path in paths}, root)
+    result, rows, _ = face.prepare_face_source(root, tmp_path / "unused", reviewed, dry_run=True)
+    assert result["status"] == "READY", result["reasons"]
+    assert rows is None
+
+
+def test_review_cannot_split_exact_duplicate_family(tmp_path):
+    root = tmp_path / "face"
+    paths = _fixture(root)
+    shutil.copyfile(root / paths[0], root / paths[1])
+    reviewed = tmp_path / "groups.json"
+    _review(reviewed, {paths[0]: "scene-a", paths[1]: "scene-b"}, root)
+    result, _, _ = face.prepare_face_source(root, tmp_path / "unused", reviewed, dry_run=True)
+    assert result["status"] == "NOT READY"
+    assert any("family" in reason.lower() or "duplicate" in reason.lower() for reason in result["reasons"])
+
+
+def test_duplicate_crossing_helper_rejects_different_groups():
+    assert face.cross_group_duplicate_sets([["a", "b"]], {"a": "one", "b": "one"}) == []
+    assert face.cross_group_duplicate_sets([["a", "b"]], {"a": "one", "b": "two"}) == [["a", "b"]]
+
+
+def test_review_cannot_split_video_recording_family(tmp_path):
+    root = tmp_path / "face"
+    paths = _fixture(root)
+    renamed = []
+    for old, frame in zip(paths, ("0", "19")):
+        original = root / old
+        new = original.with_name(f"VID_20230227_221709_mp4-{frame}_jpg.rf.{frame.zfill(4)}.png")
+        original.rename(new)
+        (root / old.replace("/images/", "/labels/").replace(".png", ".txt")).rename(
+            root / new.relative_to(root).as_posix().replace("/images/", "/labels/").replace(".png", ".txt"))
+        renamed.append(new.relative_to(root).as_posix())
+    reviewed = tmp_path / "groups.json"
+    _review(reviewed, {renamed[0]: "scene-a", renamed[1]: "scene-b"}, root)
+    report, _, _ = face.prepare_face_source(root, tmp_path / "unused", reviewed, dry_run=True)
+    assert report["status"] == "NOT READY"
+    assert any("family" in reason.lower() for reason in report["reasons"])
 
 
 def test_reviewed_alias_import_preserves_one_family_and_original_pixels(tmp_path):

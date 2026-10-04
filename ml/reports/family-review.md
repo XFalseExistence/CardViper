@@ -13,7 +13,11 @@ cardviper-build-family-review \
 
 Open `index.html` directly in a browser. It uses only local thumbnails and
 embedded data; it sends nothing to a server. `S`, `I`, and `U` choose same
-family, independent, or unsure for the current candidate bucket. The notes
+family, independent, or unsure for the current candidate bucket. The page shows
+machine recommendations where evidence is strong, but the recommendation button
+records a human click. It shows reviewed/unresolved counts, filters, and a next
+unresolved button. Download decisions JSON periodically and use the resume
+control to load it again if the browser closes. The notes
 field, reviewer, date, method, and approval checkbox are part of the downloaded
 `review-decisions.json`. Keep that file private with the images. The initial
 `review.json` is an unapproved draft with every decision set to unsure.
@@ -41,10 +45,11 @@ cardviper-apply-family-review \
 ```
 
 The output remains NOT READY if any bucket is unresolved or approval is absent.
-It never changes the ZIP or source permissions. Exact duplicates in the Joshua
-export still need explicit normalization reconciliation before classifier data
-preparation can be READY. Roboflow's upstream train/valid/test folders are not
-used as independent split evidence.
+An approved file containing any `unsure` decision is rejected. It never changes
+the ZIP or source permissions. All 224 known exact-duplicate sets are already
+within single proposed groups; the importer keeps those images together and
+rejects any exact set that crosses proposed or reviewed groups. Roboflow's
+upstream train/valid/test folders are not used as independent split evidence.
 
 The review pack reports what would happen if **every** unresolved bucket were
 merged. This is analysis only. In the current Joshua export that creates a

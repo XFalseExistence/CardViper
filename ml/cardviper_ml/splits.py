@@ -22,14 +22,16 @@ def group_keys(row):
 
 
 def unique_records(rows):
-    keys, digests = set(), set()
+    keys, digests = set(), {}
     for row in rows:
         if not isinstance(row, ImageRecord):
             raise ValueError("Expected validated ImageRecord with scene metadata")
-        if record_key(row) in keys or row.image_sha256 in digests:
+        previous = digests.get(row.image_sha256)
+        if (record_key(row) in keys or
+                previous is not None and previous != (row.source_id, row.scene_id)):
             raise ValueError("Duplicate image path or content; reconcile provenance before splitting")
         keys.add(record_key(row))
-        digests.add(row.image_sha256)
+        digests[row.image_sha256] = row.source_id, row.scene_id
 
 
 def connected_groups(rows):

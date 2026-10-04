@@ -128,8 +128,14 @@ def _review_groups(path, proposal):
     for image_path, proposed_group in proposal["groups"].items():
         connected[proposed_group].add(groups[image_path])
     if any(len(values) > 1 for values in connected.values()):
-        raise ValueError("A filename or exact-hash family was split across reviewed scene groups")
+        raise ValueError("A filename, video, or exact-hash family was split across reviewed scene groups")
     return groups, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def cross_group_duplicate_sets(duplicate_sets, groups):
+    """Return exact-image sets that could leak across scene groups."""
+    return [paths for paths in duplicate_sets
+            if len({groups[path] for path in paths}) > 1]
 
 
 def prepare_face_source(source_path, workspace_source_path, reviewed_groups_path=None, *,
@@ -169,9 +175,14 @@ def prepare_face_source(source_path, workspace_source_path, reviewed_groups_path
             })
             report["group_proposal"] = proposal
             report["data_yaml_sha256"] = artifact["data_yaml_sha256"]
-            if report["family_audit"]["exact_duplicates"]:
-                raise ValueError("Exact duplicate images must be reconciled before splitting")
+            duplicates = report["family_audit"]["exact_duplicates"]
+            proposal_crossings = cross_group_duplicate_sets(duplicates, proposal["groups"])
+            report["family_audit"]["exact_duplicate_crossing_count"] = len(proposal_crossings)
+            if proposal_crossings:
+                raise ValueError("Exact duplicate images cross proposed scene groups")
             groups, groups_sha = _review_groups(reviewed_groups_path, proposal)
+            if cross_group_duplicate_sets(duplicates, groups):
+                raise ValueError("Exact duplicate images cross reviewed scene groups")
             report["reviewed_groups_sha256"] = groups_sha
             names = [artifact["source_class_index_to_name"][str(i)] for i in range(52)]
             import_groups = {path: {"scene_id": groups[path]} for path in proposal["groups"]}

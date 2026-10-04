@@ -167,8 +167,9 @@ A whole component belongs to one split. Any `held_out: true` member reserves the
 **entire component** to holdout, separate from train/val/test. The Pixel 7
 hard-case set must remain held out; it is not training or calibration data.
 
-Unique images are assigned once. Duplicate source/path or identical file SHA-256
-is rejected even across sources: reconcile metadata/duplicates first. Byte hashes
+Each source/path is assigned once. Identical bytes may be retained only within
+one source and scene group; a hash crossing groups or sources is rejected.
+Byte hashes
 cannot identify recompressed near-duplicates; honest scene/session metadata is a
 hard requirement, not a perceptual-deduplication claim. Group order is seeded
 SHA-256 over stable source/image keys, independent of input record order.

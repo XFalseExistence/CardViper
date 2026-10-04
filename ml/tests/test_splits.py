@@ -69,6 +69,18 @@ def test_duplicate_images_rejected_instead_of_leaking(kind):
         split_records(rows + [duplicate])
 
 
+def test_same_content_in_same_scene_is_kept_in_one_split():
+    from cardviper_ml.splits import split_records, validate_splits
+    rows = dataset(24)
+    duplicate = replace(rows[0], image_path="images/duplicate.png")
+    source = rows + [duplicate]
+    result = split_records(source)
+    validate_splits(result, expected=source)
+    matching = [name for name, items in result.items() if any(row.image_sha256 == duplicate.image_sha256 for row in items)]
+    assert len(matching) == 1
+    assert sum(row.image_sha256 == duplicate.image_sha256 for row in result[matching[0]]) == 2
+
+
 def test_validator_rejects_cross_split_groups_missing_extra_or_modified_records():
     from cardviper_ml.splits import split_records, validate_splits
     rows = dataset(24)

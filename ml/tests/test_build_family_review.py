@@ -7,10 +7,10 @@ from PIL import Image
 from cardviper_ml.build_family_review import build_review_pack
 
 
-def review_fixture(tmp_path):
+def review_fixture(tmp_path, *, exact_duplicate=False):
     source = tmp_path / "source"
     names = []
-    for index, color in enumerate(("red", "blue")):
+    for index, color in enumerate(("red", "red" if exact_duplicate else "blue")):
         image = source / "train" / "images" / f"card-{index}_jpg.rf.{index:032x}.jpg"
         label = source / "train" / "labels" / f"card-{index}_jpg.rf.{index:032x}.txt"
         image.parent.mkdir(parents=True, exist_ok=True)
@@ -26,7 +26,7 @@ def review_fixture(tmp_path):
     audit = tmp_path / "audit.json"
     audit.write_text(json.dumps({"artifact_status": "SOURCE_ARTIFACT_VALID",
                                  "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
-                                 "exact_duplicate_files": []}))
+                                 "exact_duplicate_files": [names] if exact_duplicate else []}))
     family = tmp_path / "family.json"
     family.write_text(json.dumps({"unresolved_similarity_candidates": [names]}))
     proposal = tmp_path / "proposal.json"
@@ -51,3 +51,16 @@ def test_offline_pack_binds_image_hashes_and_starts_unapproved(tmp_path):
     assert all(len(image["sha256"]) == 64 for image in candidate["images"])
     assert candidate["candidate_id"] == data["decisions"][0]["candidate_id"]
     assert "http://" not in (output / "index.html").read_text()
+
+
+def test_review_html_exposes_recommendations_progress_filters_and_safe_export(tmp_path):
+    args = review_fixture(tmp_path)
+    output = tmp_path / "review"
+    build_review_pack(*args, output)
+    html = (output / "index.html").read_text()
+    for expected in ("RECOMMENDATION", "NO RECOMMENDATION", "Accept shown recommendation",
+                     "reviewed", "unresolved", "Next unresolved", "strong-same",
+                     "ambiguous", "strong-independent", "undecided",
+                     "archive_sha256", "artifact_fingerprint", "candidate_id"):
+        assert expected in html
+    assert "approved" in html and "unsure" in html

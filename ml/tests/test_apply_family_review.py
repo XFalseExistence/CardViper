@@ -46,3 +46,46 @@ def test_human_review_applies_only_explicit_decision(tmp_path, decision, expecte
     groups = json.loads(output.read_text())
     assert len(set(groups["groups"].values())) == expected_groups
     assert groups["review"]["approved"] is True
+
+
+def test_independent_decision_cannot_split_exact_duplicate_images(tmp_path):
+    args = review_fixture(tmp_path, exact_duplicate=True)
+    pack = tmp_path / "pack"
+    build_review_pack(*args, pack)
+    data = json.loads((pack / "review.json").read_text())
+    data.update({"reviewer": "human", "review_date": "2026-10-04",
+                 "method": "Checked originals", "approved": True})
+    data["decisions"][0]["decision"] = "independent"
+    reviewed = tmp_path / "reviewed.json"
+    reviewed.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="duplicate"):
+        apply_review(*args, reviewed, tmp_path / "groups.json")
+
+
+def test_same_family_decision_keeps_exact_duplicates_together(tmp_path):
+    args = review_fixture(tmp_path, exact_duplicate=True)
+    pack = tmp_path / "pack"
+    build_review_pack(*args, pack)
+    data = json.loads((pack / "review.json").read_text())
+    data.update({"reviewer": "human", "review_date": "2026-10-04",
+                 "method": "Checked source provenance", "approved": True})
+    data["decisions"][0]["decision"] = "same_family"
+    reviewed = tmp_path / "reviewed.json"
+    reviewed.write_text(json.dumps(data))
+    result = apply_review(*args, reviewed, tmp_path / "groups.json")
+    assert result["status"] == "READY"
+    groups = json.loads((tmp_path / "groups.json").read_text())["groups"]
+    assert len(set(groups.values())) == 1
+
+
+def test_approval_with_unsure_decision_is_rejected(tmp_path):
+    args = review_fixture(tmp_path)
+    pack = tmp_path / "pack"
+    build_review_pack(*args, pack)
+    data = json.loads((pack / "review.json").read_text())
+    data.update({"reviewer": "human", "review_date": "2026-10-04",
+                 "method": "Checked originals", "approved": True})
+    reviewed = tmp_path / "reviewed.json"
+    reviewed.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="unsure"):
+        apply_review(*args, reviewed, tmp_path / "groups.json")
