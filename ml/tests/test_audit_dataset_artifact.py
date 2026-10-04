@@ -30,3 +30,11 @@ def test_wrong_source_id_fails_closed(tmp_path):
 def test_wrong_project_metadata_fails_closed(tmp_path):
     (tmp_path / "data.yaml").write_text("roboflow:\n  workspace: other\n  project: playing-cards-9gfac\n  version: 2\nnames: []\n")
     assert audit_artifact(tmp_path)["artifact_status"] == "INVALID"
+
+
+def test_literal_back_cannot_be_aliased_into_face_export(tmp_path):
+    (tmp_path / "data.yaml").write_text("roboflow:\n  workspace: joshuas-workspace\n  project: playing-cards-9gfac\n  version: 2\nnames:\n" + "".join(
+        f"  {i}: {label}\n" for i, label in enumerate((*LABELS[1:-1], "BACK"))))
+    report = audit_artifact(tmp_path, class_map={"BACK": "AC"})
+    assert report["artifact_status"] == "INVALID"
+    assert "literal BACK" in report["errors"][0]

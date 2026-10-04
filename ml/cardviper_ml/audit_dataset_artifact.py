@@ -4,8 +4,9 @@ import argparse
 from collections import Counter, defaultdict
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
+import stat
 import tempfile
 import zipfile
 
@@ -26,7 +27,7 @@ def _names(raw):
     raise ValueError("data.yaml names must have contiguous numeric class indexes")
 
 
-def _audit_root(root):
+def _audit_root(root, *, class_map=None):
     errors = []
     yaml_files = sorted(root.rglob("data.yaml"))
     if len(yaml_files) != 1:
@@ -38,7 +39,15 @@ def _audit_root(root):
     provenance = data.get("roboflow")
     if not isinstance(provenance, dict) or provenance.get("workspace") != "joshuas-workspace" or provenance.get("project") != "playing-cards-9gfac" or str(provenance.get("version")) != "2":
         raise ValueError("Export is not Joshuas Workspace / playing-cards-9gfac version 2")
-    names = _names(data.get("names"))
+    original_names = _names(data.get("names"))
+    if "BACK" in original_names:
+        raise ValueError("Joshua face export must not contain a literal BACK class")
+    aliases = class_map or {}
+    if (not isinstance(aliases, dict) or
+            any(not isinstance(key, str) or not isinstance(value, str) for key, value in aliases.items()) or
+            set(aliases) - set(original_names)):
+        raise ValueError("Alias map contains unknown export classes")
+    names = [aliases.get(name, name) for name in original_names]
     if len(names) != 52 or len(set(names)) != 52 or set(names) != set(LABELS[:-1]):
         raise ValueError("Export class indexes must map to exactly the canonical 52 faces, without BACK")
     if data.get("nc", 52) != 52:
@@ -78,7 +87,7 @@ def _audit_root(root):
                         raise ValueError(f"Unknown class index on row {line_no}")
                     import math
                     cx, cy, w, h = map(float, tokens[1:])
-                    if not all(map(math.isfinite, (cx, cy, w, h))) or w <= 0 or h <= 0 or cx-w/2 < -1e-6 or cy-h/2 < -1e-6 or cx+w/2 > 1+1e-6 or cy+h/2 > 1+1e-6:
+                    if not all(map(math.isfinite, (cx, cy, w, h))) or w <= 0 or h <= 0 or cx-w/2 < 0 or cy-h/2 < 0 or cx+w/2 > 1 or cy+h/2 > 1:
                         raise ValueError(f"Invalid box on row {line_no}")
                     boxes += 1
                 digest = hashlib.sha256(image.read_bytes()).hexdigest()
@@ -97,6 +106,8 @@ def _audit_root(root):
         "training_status": "NOT READY",
         "source_id": SOURCE_ID,
         "class_index_to_label": {str(i): label for i, label in enumerate(names)},
+        "source_class_index_to_name": {str(i): name for i, name in enumerate(original_names)},
+        "data_yaml_sha256": hashlib.sha256(yaml_files[0].read_bytes()).hexdigest(),
         "image_count": sum(counts.values()),
         "annotation_count": annotations,
         "box_count": boxes,
@@ -107,7 +118,7 @@ def _audit_root(root):
     }
 
 
-def audit_artifact(path, *, expected_source_id=SOURCE_ID, archive_sha256=None):
+def audit_artifact(path, *, expected_source_id=SOURCE_ID, archive_sha256=None, class_map=None):
     path = Path(path)
     if expected_source_id != SOURCE_ID:
         return {"artifact_status": "INVALID", "training_status": "NOT READY", "errors": ["Wrong source ID"]}
@@ -118,17 +129,33 @@ def audit_artifact(path, *, expected_source_id=SOURCE_ID, archive_sha256=None):
                 raise ValueError("Archive SHA-256 mismatch")
             with tempfile.TemporaryDirectory() as directory, zipfile.ZipFile(path) as archive:
                 root = Path(directory)
-                for member in archive.infolist():
+                members = archive.infolist()
+                if len(members) > 100000 or sum(member.file_size for member in members) > 4 * 1024**3:
+                    raise ValueError("Archive exceeds bounded member count or expanded size")
+                seen, files = set(), set()
+                for member in members:
+                    name = PurePosixPath(member.filename)
+                    normalized = name.as_posix()
                     target = root / member.filename
-                    if member.filename.startswith("/") or not target.resolve().is_relative_to(root.resolve()):
-                        raise ValueError("Unsafe archive path")
-                    if member.file_size > 512 * 1024 * 1024:
-                        raise ValueError("Oversized archive member")
+                    if (name.is_absolute() or ".." in name.parts or "\\" in member.filename or
+                            ":" in member.filename or normalized in ("", ".") or
+                            normalized in seen or stat.S_ISLNK(member.external_attr >> 16) or
+                            not target.resolve().is_relative_to(root.resolve()) or
+                            member.file_size > 512 * 1024**2 or
+                            (member.file_size and not member.compress_size) or
+                            (member.compress_size and member.file_size > member.compress_size * 1000)):
+                        raise ValueError(f"Unsafe or oversized archive member: {member.filename}")
+                    seen.add(normalized)
+                    if not member.is_dir():
+                        files.add(normalized)
+                if any(any(parent.as_posix() in files for parent in PurePosixPath(name).parents)
+                       for name in seen):
+                    raise ValueError("Archive file and directory paths collide")
                 archive.extractall(root)
-                report = _audit_root(root)
+                report = _audit_root(root, class_map=class_map)
             report["archive_sha256"] = actual_hash
             return report
-        report = _audit_root(path)
+        report = _audit_root(path, class_map=class_map)
         report["archive_sha256"] = None
         return report
     except (OSError, ValueError, zipfile.BadZipFile, yaml.YAMLError) as error:

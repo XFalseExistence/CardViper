@@ -53,6 +53,7 @@ def collect_rows(root):
             labels = [line.split()[0] for line in label.read_text(encoding="utf-8").splitlines() if line.strip()]
         rows.append({"path": image.relative_to(root).as_posix(),
                      "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+                     "annotation_sha256": hashlib.sha256(label.read_bytes()).hexdigest() if label.is_file() else None,
                      "width": width, "height": height, "labels": labels,
                      "annotation_exists": label.is_file()})
     return rows

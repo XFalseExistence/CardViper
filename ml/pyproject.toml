@@ -26,6 +26,8 @@ cardviper-eval-classifier = "cardviper_ml.eval_classifier:main"
 cardviper-export-classifier = "cardviper_ml.export_classifier:main"
 cardviper-inspect-classifier = "cardviper_ml.inspect_litert:main"
 cardviper-classifier-contract = "cardviper_ml.classifier_contract:main"
+cardviper-import-back = "cardviper_ml.import_back_captures:main"
+cardviper-prepare-classifier-data = "cardviper_ml.prepare_classifier_data:main"
 
 [tool.setuptools.packages.find]
 include = ["cardviper_ml*"]

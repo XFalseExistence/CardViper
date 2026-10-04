@@ -267,6 +267,74 @@ Resolve every generated family before creating grouped splits. Register real
 BACK capture provenance separately. No source permission changes solely
 because an archive exists.
 
+## B2 one-command data onboarding
+
+Place the **original** Joshua v2 YOLOv8 ZIP (or its unmodified extracted
+directory) and CardViper-owned BACK photos with `captures.json` under ignored
+`ml/local/`. The [BACK capture format](reports/back-capture-format.md) defines
+the required rights, session, deck-design and annotation evidence. From the
+repository root, first audit without writing a workspace:
+
+```sh
+cardviper-prepare-classifier-data \
+  --face-source ml/local/sources/joshua-v2.zip \
+  --back-source ml/local/cardviper-back \
+  --workspace ml/local/b2 \
+  --sources ml/datasets/sources.json \
+  --dry-run > ml/local/b2-dry-run.json
+```
+
+The command exits 2 and reports `NOT READY` until both sources and a reviewed
+face group map are present. Copy `face_review.group_proposal` from the dry-run
+JSON to a **local** review file, replace its `review` object with the fields
+below, and review its filename/hash families and similarity candidates against
+original scene provenance. Its `artifact_fingerprint` must remain unchanged;
+it binds approval to the exact YAML, image bytes, annotation bytes and, for a
+ZIP, archive bytes. Every proposed image path needs a `groups` entry. Merge
+related variants into the same scene ID; never split a proposed family.
+
+```json
+{
+  "schema_version": 1,
+  "source_id": "playing-cards-seed",
+  "artifact_fingerprint": "COPY_FROM_DRY_RUN_GROUP_PROPOSAL",
+  "groups": {"train/images/ACTUAL_FILENAME.jpg": "verified-original-scene-001"},
+  "review": {
+    "reviewer": "ACTUAL_REVIEWER",
+    "review_date": "YYYY-MM-DD",
+    "method": "How original scenes and generated variants were checked",
+    "approved": true,
+    "similarity_candidates_reviewed": true
+  }
+}
+```
+
+After the review and BACK audit are complete, use a **new** workspace path:
+
+```sh
+cardviper-prepare-classifier-data \
+  --face-source ml/local/sources/joshua-v2.zip \
+  --back-source ml/local/cardviper-back \
+  --face-groups ml/local/joshua-reviewed-groups.json \
+  --retrieval-date YYYY-MM-DD \
+  --workspace ml/local/b2 \
+  --sources ml/datasets/sources.json
+```
+
+If Joshua uses noncanonical class names, add `--class-map
+ml/local/joshua-class-map.json` with explicit source-name-to-canonical-face
+aliases. Literal `BACK` in the Joshua export is always rejected. The command
+rechecks image hashes, normalizes both sources, chooses a grouped split,
+builds crops and runs the 53-class preflight. It creates `ml/local/b2/sources.json`
+with classifier-only permission **only when the preflight is READY**. Review
+`summary.json`, both source audits, and `classifier-preflight.json` before using
+those outputs. To also update tracked `ml/datasets/sources.json` with the
+reviewed evidence, rerun into a new workspace with `--promote-sources`; this
+never grants detector permission. A failed run cannot be resumed in place.
+
+No local data or approval is bundled. This command cannot declare the real
+baseline, train a model, or produce accuracy metrics without those inputs.
+
 ## B2 guarded training and export
 
 Generate train/validation/test/holdout B1 splits and crops, then run the
@@ -276,15 +344,15 @@ and Pixel holdout crops are not opened while fitting. The chosen checkpoint
 uses validation loss, with separate frozen-head and fine-tuning histories.
 
 ```sh
-cardviper-train-classifier --sources ml/datasets/sources.json \
-  --splits ml/local/splits --crops ml/local/crops \
-  --roots ml/local/roots.json \
+cardviper-train-classifier --sources ml/local/b2/sources.json \
+  --splits ml/local/b2/splits --crops ml/local/b2/crops \
+  --roots ml/local/b2/roots.json \
   --output ml/local/classifier-run
 cardviper-eval-classifier \
   --model ml/local/classifier-run/stage1_best.keras \
-  --test-crops ml/local/crops/test \
-  --test-split-manifest ml/local/splits/test.jsonl \
-  --roots ml/local/roots.json \
+  --test-crops ml/local/b2/crops/test \
+  --test-split-manifest ml/local/b2/splits/test.jsonl \
+  --roots ml/local/b2/roots.json \
   --training-metadata ml/local/classifier-run/training_metadata.json \
   --output-prefix ml/local/classifier-run/test-evaluation
 cardviper-export-classifier \
