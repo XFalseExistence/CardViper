@@ -73,6 +73,22 @@ def test_review_cannot_split_two_generated_variants(tmp_path):
     assert records is None and actual_root is None
 
 
+def test_proposal_unions_distinct_frames_of_one_video(tmp_path):
+    root = tmp_path / "face"
+    paths = _fixture(root)
+    for old, frame in zip(paths, ("0", "19")):
+        original = root / old
+        new = original.with_name(f"VID_20230227_221709_mp4-{frame}_jpg.rf.{frame.zfill(4)}.png")
+        original.rename(new)
+        (root / old.replace("/images/", "/labels/").replace(".png", ".txt")).rename(
+            root / new.relative_to(root).as_posix().replace("/images/", "/labels/").replace(".png", ".txt"))
+    report, _, _ = face.prepare_face_source(root, tmp_path / "unused", dry_run=True)
+    assert report["group_proposal"] is not None
+    assert len(set(report["group_proposal"]["groups"].values())) == 1
+    assert report["family_audit"]["unresolved_cross_group_candidate_count"] >= 0
+    assert report["family_audit"]["grouping_ready"] is False
+
+
 def test_reviewed_alias_import_preserves_one_family_and_original_pixels(tmp_path):
     root = tmp_path / "face"
     paths = _fixture(root, alias=True)

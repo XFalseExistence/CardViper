@@ -10,11 +10,27 @@ import re
 from PIL import Image
 
 
-def filename_family(path):
+def _roboflow_source_stem(path):
     stem = path.rsplit("/", 1)[-1]
     stem = re.sub(r"(?i)\.(jpg|jpeg|png|webp|bmp)$", "", stem)
-    stem = re.sub(r"(?i)_(jpg|jpeg|png|webp|bmp)\.rf\.[a-f0-9]+$", "", stem)
-    return stem
+    match = re.fullmatch(r"(?i)(.+)_(jpg|jpeg|png|webp|bmp)\.rf\.([a-f0-9]{3,})", stem)
+    return (match.group(1), match.group(2).lower()) if match else None
+
+
+def filename_family(path):
+    """Roboflow source filename before its materialized variant hash."""
+    source = _roboflow_source_stem(path)
+    return f"{source[0]}_{source[1]}" if source else path.rsplit("/", 1)[-1]
+
+
+def video_recording_family(path):
+    """Frames with the same explicit video filename stem share one recording."""
+    source = _roboflow_source_stem(path)
+    if source:
+        match = re.fullmatch(r"(.+_mp4)-\d+", source[0], flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+    return None
 
 
 def audit_families(rows):
@@ -31,7 +47,10 @@ def audit_families(rows):
         "unresolved_similarity_candidates": sorted(sorted(paths) for paths in dimensions.values() if len(paths) > 1),
         "orphan_images": [row["path"] for row in rows if row.get("annotation_exists") is False],
         "grouping_ready": False,
-        "method": "SHA-256, filename, dimensions and annotation labels; clues require human provenance review",
+        "roboflow_lineage_image_count": sum(_roboflow_source_stem(row["path"]) is not None for row in rows),
+        "video_recording_count": len({video_recording_family(row["path"]) for row in rows
+                                      if video_recording_family(row["path"]) is not None}),
+        "method": "SHA-256, Roboflow source stem, explicit video recording stem, dimensions and annotation labels; unresolved clues require human provenance review",
     }
 
 

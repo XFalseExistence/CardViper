@@ -3,12 +3,12 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-import re
 
 from PIL import Image
 
 from .labels import decode
 from .manifest import Annotation, ImageRecord, local_path, read_sources, write_manifest
+from .yolo_annotations import parse_yolo_row
 
 
 def import_yolo(root, source_id, class_names, groups, *, class_map=None,
@@ -48,19 +48,16 @@ def import_yolo(root, source_id, class_names, groups, *, class_map=None,
         for line_number, line in enumerate(annotation.read_text(encoding="utf-8").splitlines(), 1):
             if not line.strip():
                 continue
-            tokens = line.split()
             try:
-                if len(tokens) != 5 or not re.fullmatch(r"\d+", tokens[0]):
-                    raise ValueError("Expected class_id center_x center_y width height")
-                class_id = int(tokens[0])
-                if not 0 <= class_id < len(labels):
-                    raise ValueError("Unknown class index")
-                cx, cy, w, h = map(float, tokens[1:])
-                if not (0 <= cx <= 1 and 0 <= cy <= 1 and 0 < w <= 1 and 0 < h <= 1):
-                    raise ValueError("YOLO coordinates must be finite and normalized to 0..1")
-                box = ((cx - w / 2) * width, (cy - h / 2) * height,
-                       (cx + w / 2) * width, (cy + h / 2) * height)
-                objects.append(Annotation(str(line_number), labels[class_id], box))
+                parsed = parse_yolo_row(line, len(labels))
+                left, top, right, bottom = parsed.bbox
+                box = (left * width, top * height, right * width, bottom * height)
+                objects.append(Annotation(str(line_number), labels[parsed.class_id], box,
+                                          source_annotation_type=parsed.annotation_type,
+                                          source_annotation_path=annotation_relative,
+                                          source_annotation_row=line_number,
+                                          polygon_point_count=parsed.point_count,
+                                          source_annotation_sha256=parsed.source_sha256))
             except ValueError as error:
                 raise ValueError(f"{annotation_relative}:{line_number}: {error}") from error
         rows.append(ImageRecord(source_id=source_id, scene_id=group["scene_id"],

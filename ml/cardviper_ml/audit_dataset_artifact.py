@@ -5,7 +5,6 @@ from collections import Counter, defaultdict
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
-import re
 import stat
 import tempfile
 import zipfile
@@ -14,6 +13,7 @@ from PIL import Image
 import yaml
 
 from .labels import LABELS
+from .yolo_annotations import parse_yolo_row
 
 SOURCE_ID = "playing-cards-seed"
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
@@ -56,6 +56,10 @@ def _audit_root(root, *, class_map=None):
     hashes = defaultdict(list)
     annotations = 0
     boxes = 0
+    bbox_rows = 0
+    polygon_rows = 0
+    polygon_conversions = []
+    malformed_rows = []
     for split in ("train", "valid", "val", "test"):
         images = base / split / "images"
         labels = base / split / "labels"
@@ -79,17 +83,23 @@ def _audit_root(root, *, class_map=None):
                 for line_no, line in enumerate(label.read_text(encoding="utf-8").splitlines(), 1):
                     if not line.strip():
                         continue
-                    tokens = line.split()
-                    if len(tokens) != 5 or not re.fullmatch(r"\d+", tokens[0]):
-                        raise ValueError(f"Invalid YOLO row {line_no}")
-                    class_id = int(tokens[0])
-                    if not 0 <= class_id < 52:
-                        raise ValueError(f"Unknown class index on row {line_no}")
-                    import math
-                    cx, cy, w, h = map(float, tokens[1:])
-                    if not all(map(math.isfinite, (cx, cy, w, h))) or w <= 0 or h <= 0 or cx-w/2 < 0 or cy-h/2 < 0 or cx+w/2 > 1 or cy+h/2 > 1:
-                        raise ValueError(f"Invalid box on row {line_no}")
+                    try:
+                        parsed = parse_yolo_row(line, 52)
+                    except ValueError as error:
+                        detail = {"label_path": label.relative_to(base).as_posix(),
+                                  "row": line_no, "reason": str(error)}
+                        malformed_rows.append(detail)
+                        errors.append(f"{detail['label_path']}:{line_no}: {error}")
+                        continue
                     boxes += 1
+                    if parsed.annotation_type == "bbox":
+                        bbox_rows += 1
+                    else:
+                        polygon_rows += 1
+                        polygon_conversions.append({"label_path": label.relative_to(base).as_posix(),
+                                                    "row": line_no, "point_count": parsed.point_count,
+                                                    "source_annotation_sha256": parsed.source_sha256,
+                                                    "normalized_bbox": parsed.bbox})
                 digest = hashlib.sha256(image.read_bytes()).hexdigest()
                 hashes[digest].append(image.relative_to(base).as_posix())
                 counts[split] += 1
@@ -111,6 +121,12 @@ def _audit_root(root, *, class_map=None):
         "image_count": sum(counts.values()),
         "annotation_count": annotations,
         "box_count": boxes,
+        "bbox_row_count": bbox_rows,
+        "polygon_row_count": polygon_rows,
+        "malformed_row_count": len(malformed_rows),
+        "malformed_rows": malformed_rows,
+        "normalized_object_count": boxes,
+        "polygon_conversions": polygon_conversions,
         "upstream_split_images": dict(sorted(counts.items())),
         "exact_duplicate_files": [sorted(paths) for paths in hashes.values() if len(paths) > 1],
         "grouping_verified": False,

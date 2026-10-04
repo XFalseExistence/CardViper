@@ -53,6 +53,11 @@ class Annotation:
     label: str
     bbox: tuple[float, float, float, float]
     detector_class: str = "CARD"
+    source_annotation_type: str | None = None
+    source_annotation_path: str | None = None
+    source_annotation_row: int | None = None
+    polygon_point_count: int | None = None
+    source_annotation_sha256: str | None = None
 
     def __post_init__(self):
         nonempty(self.annotation_id, "annotation_id")
@@ -60,6 +65,22 @@ class Annotation:
         object.__setattr__(self, "bbox", checked_box(self.bbox))
         if self.detector_class != "CARD":
             raise ValueError("Detector semantic class must be CARD")
+        if self.source_annotation_type is not None:
+            if self.source_annotation_type not in {"bbox", "polygon"}:
+                raise ValueError("Unknown source annotation type")
+            relative_path(self.source_annotation_path)
+            if type(self.source_annotation_row) is not int or self.source_annotation_row <= 0:
+                raise ValueError("Invalid source annotation row")
+            if not isinstance(self.source_annotation_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", self.source_annotation_sha256):
+                raise ValueError("Invalid source annotation SHA-256")
+            if self.source_annotation_type == "polygon":
+                if type(self.polygon_point_count) is not int or self.polygon_point_count < 3:
+                    raise ValueError("Invalid polygon point count")
+            elif self.polygon_point_count is not None:
+                raise ValueError("Box annotation cannot have polygon points")
+        elif any(value is not None for value in (self.source_annotation_path, self.source_annotation_row,
+                                                self.polygon_point_count, self.source_annotation_sha256)):
+            raise ValueError("Incomplete source annotation provenance")
 
 
 @dataclass(frozen=True)

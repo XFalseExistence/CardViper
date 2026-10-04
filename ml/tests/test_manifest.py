@@ -93,6 +93,23 @@ def test_local_yolo_import_preserves_identity_collapses_detector_and_keeps_negat
     assert rows[1].objects == ()
 
 
+def test_mixed_import_retains_original_annotation_provenance(tmp_path):
+    from cardviper_ml.import_roboflow import import_yolo
+    groups = export_fixture(tmp_path, "0 .5 .5 .2 .2\n0 .1 .2 .4 .1 .9 .7\n")
+    label = tmp_path / "labels/a.txt"
+    before = label.read_bytes()
+    row = import_yolo(tmp_path, "seed", ["AC"], groups)[0]
+    assert row.objects[0].source_annotation_type == "bbox"
+    polygon = row.objects[1]
+    assert polygon.bbox == pytest.approx((10, 8, 90, 56))
+    assert polygon.source_annotation_type == "polygon"
+    assert polygon.source_annotation_path == "labels/a.txt"
+    assert polygon.source_annotation_row == 2
+    assert polygon.polygon_point_count == 3
+    assert polygon.source_annotation_sha256 == hashlib.sha256(b"0 .1 .2 .4 .1 .9 .7").hexdigest()
+    assert label.read_bytes() == before
+
+
 @pytest.mark.parametrize("line", ["5 .5 .5 .1 .1", "-1 .5 .5 .1 .1", "0.0 .5 .5 .1 .1",
     "0 1.1 .5 .1 .1", "0 0 .5 .2 .1", "0 .5 .5 0 .1", "0 nan .5 .1 .1",
     "0 .5 .5 .1 inf", "0 .5 .5 .1", "0 .5 .5 .1 .1 .9"])

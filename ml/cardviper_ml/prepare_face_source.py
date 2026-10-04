@@ -10,7 +10,7 @@ import tempfile
 import zipfile
 
 from .audit_dataset_artifact import SOURCE_ID, audit_artifact
-from .audit_image_families import audit_families, collect_rows, filename_family
+from .audit_image_families import audit_families, collect_rows, filename_family, video_recording_family
 from .import_roboflow import import_yolo
 from .manifest import nonempty
 from .splits import unique_records
@@ -70,7 +70,11 @@ def _proposal(rows, artifact):
 
     first = {}
     for index, row in enumerate(rows):
-        for clue in (("family", filename_family(row["path"])), ("sha256", row["sha256"])):
+        clues = [("family", filename_family(row["path"])), ("sha256", row["sha256"])]
+        recording = video_recording_family(row["path"])
+        if recording is not None:
+            clues.append(("video_recording", recording))
+        for clue in clues:
             if clue in first:
                 parent[find(index)] = find(first[clue])
             else:
@@ -151,6 +155,18 @@ def prepare_face_source(source_path, workspace_source_path, reviewed_groups_path
             rows = collect_rows(base)
             report["family_audit"] = audit_families(rows)
             proposal = _proposal(rows, artifact)
+            same_family = 0
+            unresolved = 0
+            for candidates in report["family_audit"]["unresolved_similarity_candidates"]:
+                if len({proposal["groups"][path] for path in candidates}) == 1:
+                    same_family += 1
+                else:
+                    unresolved += 1
+            report["family_audit"].update({
+                "resolved_same_family_candidate_count": same_family,
+                "resolved_independent_candidate_count": 0,
+                "unresolved_cross_group_candidate_count": unresolved,
+            })
             report["group_proposal"] = proposal
             report["data_yaml_sha256"] = artifact["data_yaml_sha256"]
             if report["family_audit"]["exact_duplicates"]:
