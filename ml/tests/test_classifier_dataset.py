@@ -32,3 +32,15 @@ def test_missing_crop_fails(tmp_path):
     (root / "crops.jsonl").write_text(json.dumps({"label": "BACK", "crop_path": "missing.png"}) + "\n")
     with pytest.raises(ValueError):
         load_crop_split(root, "train")
+
+
+def test_group_reserved_holdout_accepts_member_without_individual_held_out_flag(tmp_path):
+    root = tmp_path / "holdout"
+    root.mkdir()
+    Image.new("RGB", (8, 8), "blue").save(root / "card.png")
+    row = dict(schema_version=1, source_id="owned", scene_id="shared-scene", session_id=None,
+               held_out=False, source_image="source/card.png", source_image_sha256="a" * 64,
+               source_annotation="ann/card.txt", annotation_id="1", source_bbox=[0, 0, 8, 8],
+               label="BACK", crop_bbox=[0, 0, 8, 8], padding=0, crop_path="card.png")
+    (root / "crops.jsonl").write_text(json.dumps(row) + "\n")
+    assert load_crop_split(root, "holdout")[0].label == "BACK"

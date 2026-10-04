@@ -38,7 +38,9 @@ def load_crop_split(directory, split):
                 raise ValueError("Malformed source image SHA-256 provenance")
             if row.get("schema_version") != 1 or type(row.get("held_out")) is not bool:
                 raise ValueError("Malformed crop provenance")
-            if row["held_out"] != (split == "holdout"):
+            # B1 reserves a whole connected scene/session group for holdout;
+            # only the triggering record must carry held_out=True.
+            if split != "holdout" and row["held_out"]:
                 raise ValueError("Holdout provenance conflicts with split")
             label = row["label"]
             if label not in LABELS:
