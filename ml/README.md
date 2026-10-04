@@ -104,10 +104,14 @@ silently repaired.
 
 ## Local Roboflow/YOLO normalization
 
-No Roboflow SDK, network access, YAML parser or training framework is required.
-Use a local **YOLO detection** export: images plus same-stem `.txt` annotations,
-one `class_id center_x center_y width height` row per card, normalized to 0..1.
-Segmentation polygons and prediction-confidence columns are rejected.
+No Roboflow SDK, network access, or training framework is required. Use a local
+YOLO export: images plus same-stem `.txt` annotations. Strict normalized
+five-field detection boxes and valid `class_id x1 y1 ... xn yn` polygons are
+accepted. A polygon becomes its axis-aligned enclosing source-raster box for
+classifier crops; its source row type, path, line, point count, and hash remain
+in the normalized record. Malformed polygons and prediction-confidence columns
+are rejected. See [family-review.md](reports/family-review.md) for offline
+Joshua grouping review.
 
 1. Copy the export's `data.yaml` **names in its original numeric index order**
    into a local JSON array, e.g. `ml/local/classes.json` with

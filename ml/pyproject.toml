@@ -28,6 +28,9 @@ cardviper-inspect-classifier = "cardviper_ml.inspect_litert:main"
 cardviper-classifier-contract = "cardviper_ml.classifier_contract:main"
 cardviper-import-back = "cardviper_ml.import_back_captures:main"
 cardviper-prepare-classifier-data = "cardviper_ml.prepare_classifier_data:main"
+cardviper-build-family-review = "cardviper_ml.build_family_review:main"
+cardviper-apply-family-review = "cardviper_ml.apply_family_review:main"
+cardviper-prepare-back-captures = "cardviper_ml.prepare_back_capture_manifest:main"
 
 [tool.setuptools.packages.find]
 include = ["cardviper_ml*"]

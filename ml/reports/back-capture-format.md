@@ -9,6 +9,29 @@ such as `CARDVIPER_BACK_ROOT`; point that variable at the directory containing
 and the provenance and rights evidence has been reviewed. No real capture files
 are shipped with this repository.
 
+To draft `captures.json` without typing hashes, put original photos directly
+under distinct session folders, then run:
+
+```sh
+cardviper-prepare-back-captures --root /Volumes/Toshi4TB/CardViperData/cardviper-back \
+  --device "Pixel 7" --capture-mode tight-back-crop
+```
+
+The helper refuses to overwrite an existing manifest. It records image paths,
+SHA-256, raster dimensions, device, and session-folder IDs. It leaves owner,
+rights evidence, deck design, annotation provenance, review approval, and any
+missing capture dates blank. For tight crops it sets `full_image_back: false`
+until a person confirms each stored image is one card back; for annotated scenes
+it leaves `boxes: []` until real pixel boxes are supplied. The draft is **NOT
+READY** and cannot pass the importer without those explicit decisions.
+
+Aim for at least four independently captured sessions, two physical back
+designs, and roughly 20–30 usable images per session. Vary rotation, distance,
+scale, background placement, lighting, shadows, mild glare, and partial
+occlusion. Avoid exact duplicates. A tight-back-crop file contains one card
+back; a wider scene needs hand-reviewed boxes. These are capture targets, not
+an automatic diversity or readiness claim.
+
 The following JSON is a **format illustration with placeholder hashes**, not
 production data. Replace every placeholder and compute SHA-256 from the
 original file bytes. Each entry needs a distinct normalized path, a capture
