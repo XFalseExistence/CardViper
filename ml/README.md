@@ -1,9 +1,10 @@
-# CardViper ML/data foundation
+# CardViper ML/data and classifier foundation
 
 B1 prepares local data for a future **one-class CARD detector** and **53-way
-classifier**. It does not train a model, download a dataset, require a GPU/CUDA,
-or integrate an Android inference runtime. Android production still uses
-`UnavailableCardDetector`. Only Pillow is required at runtime; pytest is for tests.
+classifier**. B2 adds guarded classifier training, evaluation and export commands.
+They do not download data or change Android production inference. Android still
+uses `UnavailableCardDetector`. TensorFlow and LiteRT are optional training
+dependencies; ordinary data-tooling tests remain lightweight.
 
 ## Python 3.11 setup and tests
 
@@ -240,3 +241,73 @@ See [dataset provenance preflight](reports/dataset-provenance-preflight.md) for
 why the current 52-class seed remains blocked, and the
 [CardViper-owned data plan](reports/cardviper-owned-data-plan.md) for BACK and
 realistic detector-negative capture requirements.
+
+## B2 local artifact and family audit
+
+Install `./ml[test]` for audits or `./ml[test,train]` with Python 3.11 for
+training. The Joshua export auditor accepts a directory or original ZIP. It
+requires Roboflow metadata for `joshuas-workspace/playing-cards-9gfac` v2,
+numeric `data.yaml` class indexes for exactly the 52 canonical faces, and
+valid image/YOLO annotation pairs. Give `--archive-sha256` when a trusted
+archive digest is available. The report distinguishes a valid source artifact
+from training readiness; it never grants training permission.
+
+```sh
+cardviper-audit-artifact /path/to/joshua-v2.zip \
+  --archive-sha256 TRUSTED_SHA256 --output ml/local/joshua-audit.json
+cardviper-audit-families /path/to/extracted-v2 \
+  --output ml/local/image-families.json
+```
+
+The family audit lists exact SHA-256 duplicates, filename-linked Roboflow
+augmentation candidates, and dimension/annotation candidates. These clues
+require human review and explicit scene/session groups; matching dimensions
+or a perceptual similarity signal cannot prove independent source images.
+Resolve every generated family before creating grouped splits. Register real
+BACK capture provenance separately. No source permission changes solely
+because an archive exists.
+
+## B2 guarded training and export
+
+Generate train/validation/test/holdout B1 splits and crops, then run the
+preflight above. Only a fresh `READY` permits the real trainer. It checks that
+train and validation crop provenance exactly matches split annotations. Test
+and Pixel holdout crops are not opened while fitting. The chosen checkpoint
+uses validation loss, with separate frozen-head and fine-tuning histories.
+
+```sh
+cardviper-train-classifier --sources ml/datasets/sources.json \
+  --splits ml/local/splits --crops ml/local/crops \
+  --output ml/local/classifier-run
+cardviper-eval-classifier \
+  --model ml/local/classifier-run/stage1_best.keras \
+  --test-crops ml/local/crops/test \
+  --training-metadata ml/local/classifier-run/training_metadata.json \
+  --output-prefix ml/local/classifier-run/test-evaluation
+cardviper-export-classifier \
+  --model ml/local/classifier-run/stage1_best.keras \
+  --training-metadata ml/local/classifier-run/training_metadata.json \
+  --output ml/local/classifier-export
+```
+
+Use the actual `selected_checkpoint` path printed by the trainer; the example
+`stage1_best.keras` is only one possible outcome. Evaluation checks that the
+path is selected and records the resulting TEST report in training metadata.
+Export requires that report, then writes a float `.tflite`, canonical
+`labels.txt` and `classifier.json` derived from inspecting those actual bytes.
+TensorFlow 2.16/Keras 3 exports a forward-only SavedModel before conversion,
+avoiding a known `from_keras_model` converter abort. Generated runs, models,
+contracts and private data remain under ignored `ml/local/` until deliberately
+reviewed for publication.
+
+Run the optional synthetic full-chain smoke with a TensorFlow-enabled Python:
+
+```sh
+python -m pytest ml/tests/test_classifier_synthetic_smoke.py -q
+```
+
+It uses random weights and synthetic samples, creates only temporary files,
+and its output is never a real accuracy result. For the real baseline, fill
+[`classifier-baseline-template.md`](reports/classifier-baseline-template.md)
+only from the generated training, TEST and export artifacts. No production
+`classifier.json` or baseline metrics exist until the real data gate passes.

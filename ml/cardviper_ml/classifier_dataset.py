@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import random
+import re
 
 from PIL import Image
 
@@ -33,6 +34,8 @@ def load_crop_split(directory, split):
             for key in ("source_id", "scene_id", "source_image", "source_image_sha256", "source_annotation", "annotation_id", "crop_path", "label"):
                 if not isinstance(row[key], str) or not row[key]:
                     raise ValueError(f"Invalid {key}")
+            if not re.fullmatch(r"[0-9a-f]{64}", row["source_image_sha256"]):
+                raise ValueError("Malformed source image SHA-256 provenance")
             if row.get("schema_version") != 1 or type(row.get("held_out")) is not bool:
                 raise ValueError("Malformed crop provenance")
             if row["held_out"] != (split == "holdout"):

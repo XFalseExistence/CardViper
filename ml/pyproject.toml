@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cardviper-ml"
 version = "0.1.0"
-description = "Offline CardViper dataset preparation tools (no training runtime)"
+description = "Offline CardViper dataset and optional classifier training tools"
 requires-python = ">=3.11"
 dependencies = ["Pillow>=11,<13", "PyYAML>=6,<7"]
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]
-train = ["tensorflow>=2.16,<2.23", "numpy>=1.26,<3"]
+train = ["tensorflow>=2.16,<2.23", "numpy>=1.26,<3", "ai-edge-litert>=1,<2"]
 
 [project.scripts]
 cardviper-labels = "cardviper_ml.labels:main"
@@ -19,6 +19,13 @@ cardviper-import = "cardviper_ml.import_roboflow:main"
 cardviper-splits = "cardviper_ml.splits:main"
 cardviper-crops = "cardviper_ml.build_classifier_crops:main"
 cardviper-classifier-preflight = "cardviper_ml.classifier_preflight:main"
+cardviper-audit-artifact = "cardviper_ml.audit_dataset_artifact:main"
+cardviper-audit-families = "cardviper_ml.audit_image_families:main"
+cardviper-train-classifier = "cardviper_ml.train_classifier:main"
+cardviper-eval-classifier = "cardviper_ml.eval_classifier:main"
+cardviper-export-classifier = "cardviper_ml.export_classifier:main"
+cardviper-inspect-classifier = "cardviper_ml.inspect_litert:main"
+cardviper-classifier-contract = "cardviper_ml.classifier_contract:main"
 
 [tool.setuptools.packages.find]
 include = ["cardviper_ml*"]

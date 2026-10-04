@@ -20,18 +20,20 @@ class ModelConfig:
 
 def model_spec(config):
     return {"architecture": "MobileNetV3Small", "input_size": config.input_size,
-            "output_width": len(LABELS), "labels": list(LABELS),
+            "output_width": len(LABELS), "labels": list(LABELS), "input_layout": "NHWC",
             "preprocessing": "MobileNetV3Small include_preprocessing=True; RGB float32 0..255",
             "head_learning_rate": config.head_learning_rate,
             "fine_tune_learning_rate": config.fine_tune_learning_rate,
             "seed": config.seed}
 
 
-def build_model(config=ModelConfig()):
+def build_model(config=ModelConfig(), *, weights="imagenet"):
     import tensorflow as tf
     tf.keras.utils.set_random_seed(config.seed)
     inputs = tf.keras.Input(shape=(config.input_size, config.input_size, 3), name="rgb_0_255")
-    backbone = tf.keras.applications.MobileNetV3Small(include_top=False, weights="imagenet",
+    if weights not in ("imagenet", None):
+        raise ValueError("Only ImageNet or explicit synthetic smoke weights=None are allowed")
+    backbone = tf.keras.applications.MobileNetV3Small(include_top=False, weights=weights,
                                                         include_preprocessing=True, input_shape=(config.input_size, config.input_size, 3))
     backbone.trainable = False
     features = backbone(inputs, training=False)
