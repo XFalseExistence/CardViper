@@ -32,6 +32,8 @@ cardviper-build-family-review = "cardviper_ml.build_family_review:main"
 cardviper-apply-family-review = "cardviper_ml.apply_family_review:main"
 cardviper-prepare-back-captures = "cardviper_ml.prepare_back_capture_manifest:main"
 cardviper-back-capture = "cardviper_ml.back_capture_intake:main"
+cardviper-detector-records = "cardviper_ml.build_detector_records:main"
+cardviper-import-detector-negatives = "cardviper_ml.import_detector_negatives:main"
 
 [tool.setuptools.packages.find]
 include = ["cardviper_ml*"]
