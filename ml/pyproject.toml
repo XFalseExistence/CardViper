@@ -34,6 +34,8 @@ cardviper-prepare-back-captures = "cardviper_ml.prepare_back_capture_manifest:ma
 cardviper-back-capture = "cardviper_ml.back_capture_intake:main"
 cardviper-detector-records = "cardviper_ml.build_detector_records:main"
 cardviper-import-detector-negatives = "cardviper_ml.import_detector_negatives:main"
+cardviper-detector-export-smoke = "cardviper_ml.detector_export_smoke:main"
+cardviper-inspect-detector = "cardviper_ml.inspect_detector_litert:main"
 
 [tool.setuptools.packages.find]
 include = ["cardviper_ml*"]

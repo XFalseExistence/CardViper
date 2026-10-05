@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "status": "TEMPLATE_ONLY",
+  "semantic_classes": ["CARD"],
+  "artifact": null,
+  "input": null,
+  "preprocessing": null,
+  "resize_or_letterbox": null,
+  "output_tensors": null,
+  "box_coordinate_format": null,
+  "nms_ownership": null,
+  "score_threshold": null,
+  "nms_threshold": null,
+  "training_selection_provenance": null,
+  "note": "Fill only from a selected, evaluated REAL detector export. The random-weight smoke model is not eligible."
+}
