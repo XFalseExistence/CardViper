@@ -25,6 +25,16 @@ jobs:
           base64 -d hevel-pixel-source.zip.b64 > /tmp/hevel-pixel-source.zip
           unzip -oq /tmp/hevel-pixel-source.zip -d pixel-bridge
           test -f pixel-bridge/app/src/main/java/com/hevel/pixelbridge/MainActivity.java
+      - name: Prepare consistent HEVEL debug signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/hevel-signing"
+          curl -fsSL "https://raw.githubusercontent.com/aosp-mirror/platform_build/main/target/product/security/testkey.pk8" -o "$RUNNER_TEMP/hevel-signing/testkey.pk8"
+          curl -fsSL "https://raw.githubusercontent.com/aosp-mirror/platform_build/main/target/product/security/testkey.x509.pem" -o "$RUNNER_TEMP/hevel-signing/testkey.x509.pem"
+          openssl pkcs8 -inform DER -in "$RUNNER_TEMP/hevel-signing/testkey.pk8" -out "$RUNNER_TEMP/hevel-signing/testkey.pem" -nocrypt
+          openssl pkcs12 -export -inkey "$RUNNER_TEMP/hevel-signing/testkey.pem" -in "$RUNNER_TEMP/hevel-signing/testkey.x509.pem" -name heveldebug -out "$RUNNER_TEMP/hevel-signing/heveldebug.p12" -passout pass:android
+          echo "HEVEL_DEBUG_KEYSTORE=$RUNNER_TEMP/hevel-signing/heveldebug.p12" >> "$GITHUB_ENV"
       - name: Apply HevelBridge name, original icon, retro palette
         run: |
           python3 - <<'PY'
@@ -47,7 +57,27 @@ jobs:
           drawable.mkdir(parents=True,exist_ok=True)
           (drawable/"hevel_controller.png").write_bytes(base64.b64decode(Path("hevel-controller-icon.png.b64").read_text().strip()))
           gradle=Path("pixel-bridge/app/build.gradle")
-          g=gradle.read_text().replace("versionCode 1","versionCode 2").replace("versionName '1.0.0'","versionName '1.1.0'")
+          g=gradle.read_text()
+          g=g.replace("applicationId 'com.hevel.pixelbridge'", "applicationId 'com.hevel.arcade.pixelbridge'")
+          g=g.replace("versionCode 1","versionCode 12").replace("versionName '1.0.0'","versionName '1.2.0'")
+          assert "applicationId 'com.hevel.arcade.pixelbridge'" in g
+          g+="""
+android {
+    signingConfigs {
+        hevelDebug {
+            storeFile file(System.getenv('HEVEL_DEBUG_KEYSTORE'))
+            storePassword 'android'
+            keyAlias 'heveldebug'
+            keyPassword 'android'
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.hevelDebug
+        }
+    }
+}
+"""
           gradle.write_text(g)
           print("HEVELBRIDGE_NAME_ICON_THEME_OK")
           PY
@@ -56,11 +86,12 @@ jobs:
       - name: Verify APK
         run: |
           test -s pixel-bridge/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs pixel-bridge/app/build/outputs/apk/debug/app-debug.apk
           sha256sum pixel-bridge/app/build/outputs/apk/debug/app-debug.apk
       - name: Upload Pixel Bridge APK
         uses: actions/upload-artifact@v4
         with:
-          name: HevelBridge-V1-1-debug-apk
+          name: HevelBridge-V1-2-stable-signing-apk
           path: pixel-bridge/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
