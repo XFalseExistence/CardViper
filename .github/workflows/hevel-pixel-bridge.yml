@@ -61,7 +61,7 @@ jobs:
           g=g.replace("applicationId 'com.hevel.pixelbridge'", "applicationId 'com.hevel.arcade.pixelbridge'")
           g=g.replace("versionCode 1","versionCode 12").replace("versionName '1.0.0'","versionName '1.2.0'")
           assert "applicationId 'com.hevel.arcade.pixelbridge'" in g
-          g += "\\n" + "\\n".join([
+          g += "\n" + "\n".join([
               "android {",
               "  signingConfigs {",
               "    hevelDebug {",
@@ -73,7 +73,7 @@ jobs:
               "  }",
               "  buildTypes { debug { signingConfig signingConfigs.hevelDebug } }",
               "}",
-          ]) + "\\n"
+          ]) + "\n"
           gradle.write_text(g)
           print("HEVELBRIDGE_NAME_ICON_THEME_OK")
           PY
