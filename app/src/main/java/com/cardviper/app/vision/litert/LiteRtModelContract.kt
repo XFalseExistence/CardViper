@@ -1,452 +1,265 @@
 package com.cardviper.app.vision.litert
 
-import com.cardviper.app.vision.CardLabelCodec
+import org.json.JSONArray
+import org.json.JSONObject
 
-private val SHA256_RE = Regex("^[0-9a-f]{64}$")
-
-enum class LiteRtModelKind { CLASSIFIER, DETECTOR }
-enum class TensorDType { FLOAT32, UINT8 }
-enum class TensorLayout { NHWC }
-enum class ChannelOrder { RGB, BGR }
-enum class ResamplingMode { NEAREST, BILINEAR }
+enum class ModelKind { CLASSIFIER, DETECTOR }
+enum class TensorLayout { NHWC, NCHW }
+enum class TensorDataType { FLOAT32, UINT8 }
 enum class ResizePolicy { STRETCH, LETTERBOX }
-enum class BoxOrder { YXYX, XYXY }
-enum class BoxUnits { NORMALIZED, MODEL_PIXELS }
+enum class ResizeFilter { NEAREST, BILINEAR }
+enum class ChannelOrder { RGB, BGR }
+enum class OutputRole { CLASSIFIER_SCORES, DETECTION_BOXES, DETECTION_SCORES, DETECTION_CLASSES, DETECTION_COUNT }
+enum class BoxCoordinateOrder { XYXY, YXYX }
+enum class BoxCoordinateUnits { PIXELS, NORMALIZED }
 enum class NmsOwnership { EMBEDDED, HOST }
 
-data class ArtifactContract(
-    val sha256: String,
-    val sizeBytes: Long,
-)
-
-data class InputTensorContract(
-    val width: Int,
-    val height: Int,
-    val channels: Int,
-    val dtype: TensorDType,
+data class ModelInput(
+    val name: String,
+    val shape: List<Int>,
     val layout: TensorLayout,
+    val dtype: TensorDataType,
+) {
+    val width: Int get() = if (layout == TensorLayout.NHWC) shape[2] else shape[3]
+    val height: Int get() = if (layout == TensorLayout.NHWC) shape[1] else shape[2]
+}
+
+data class ModelTensor(
+    val name: String,
+    val role: OutputRole,
+    val shape: List<Int>,
+    val dtype: TensorDataType,
 )
 
-data class NormalizationContract(
-    /** Model value = unsigned channel byte * multiplier + offset. */
-    val multiplier: Float,
-    val offset: Float,
-)
-
-data class PreprocessingContract(
+data class ImagePreprocessing(
+    val resizePolicy: ResizePolicy,
+    val resizeFilter: ResizeFilter,
     val channelOrder: ChannelOrder,
-    val normalization: NormalizationContract?,
-    val paddingValue: Int,
-    val resampling: ResamplingMode,
+    val scale: Double,
+    val offset: Double,
+    val padValue: Int,
 )
 
-data class ResizeContract(val policy: ResizePolicy)
-
-data class TensorRoleContract(val index: Int)
-
-data class DetectorOutputContract(
-    val boxes: TensorRoleContract,
-    val scores: TensorRoleContract,
-    val classes: TensorRoleContract,
-    val count: TensorRoleContract?,
-    val boxOrder: BoxOrder,
-    val boxUnits: BoxUnits,
-    val nmsOwnership: NmsOwnership,
-    val scoreThreshold: Float,
-    val nmsThreshold: Float,
+enum class ClassifierScoreSemantics { PROBABILITIES }
+data class ClassifierSemantics(val topK: Int, val scoreSemantics: ClassifierScoreSemantics)
+data class DetectorNms(val ownership: NmsOwnership, val scoreThreshold: Float, val iouThreshold: Float)
+data class DetectorSemantics(
+    val semanticClasses: List<String>,
     val cardClassIndex: Int,
+    val boxesTensor: String,
+    val coordinateOrder: BoxCoordinateOrder,
+    val coordinateUnits: BoxCoordinateUnits,
+    val scoresTensor: String,
+    val classesTensor: String,
+    val countTensor: String?,
+    val nms: DetectorNms,
 )
 
-sealed interface LiteRtModelContract {
-    val schemaVersion: Int
-    val artifact: ArtifactContract
-    val input: InputTensorContract
-    val preprocessing: PreprocessingContract
-    val resize: ResizeContract
-
-    data class Classifier(
-        override val schemaVersion: Int,
-        override val artifact: ArtifactContract,
-        override val input: InputTensorContract,
-        override val preprocessing: PreprocessingContract,
-        override val resize: ResizeContract,
-        val labels: List<String>,
-        val labelsSha256: String,
-        val scoreDtype: TensorDType,
-    ) : LiteRtModelContract
-
-    data class Detector(
-        override val schemaVersion: Int,
-        override val artifact: ArtifactContract,
-        override val input: InputTensorContract,
-        override val preprocessing: PreprocessingContract,
-        override val resize: ResizeContract,
-        val semanticClasses: List<String>,
-        val output: DetectorOutputContract,
-    ) : LiteRtModelContract
-
+/** Versioned model metadata parser. It accepts test contracts and future real contracts, never supplies defaults. */
+data class LiteRtModelContract(
+    val schemaVersion: Int,
+    val kind: ModelKind,
+    val artifactSha256: String,
+    val labelsSha256: String?,
+    val input: ModelInput,
+    val preprocessing: ImagePreprocessing,
+    val outputs: List<ModelTensor>,
+    val labels: List<String>,
+    val classifier: ClassifierSemantics?,
+    val detector: DetectorSemantics?,
+) {
     companion object {
-        val canonicalClassifierLabels: List<String> = buildList {
-            val ranks = listOf("A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K")
-            val suits = listOf("C", "D", "H", "S")
-            for (rank in ranks) for (suit in suits) add(rank + suit)
-            add("BACK")
+        fun parse(json: String): LiteRtModelContract = try {
+            parseRoot(JSONObject(json))
+        } catch (failure: IllegalArgumentException) {
+            throw failure
+        } catch (failure: Exception) {
+            throw IllegalArgumentException("Invalid LiteRT contract JSON: ${failure.message}", failure)
         }
 
-        fun parse(json: String): LiteRtModelContract {
-            val root = StrictJson.parse(json).asObject("contract")
-            val schema = root.requiredInt("schema_version")
-            require(schema == 1) { "Unsupported contract schema_version: $schema" }
-            return when (root.requiredEnum<LiteRtModelKind>("model_kind")) {
-                LiteRtModelKind.CLASSIFIER -> parseClassifier(schema, root)
-                LiteRtModelKind.DETECTOR -> parseDetector(schema, root)
+        private fun parseRoot(root: JSONObject): LiteRtModelContract {
+            root.only("schema_version", "model_kind", "artifact", "input", "preprocessing", "outputs", "labels", "labels_sha256", "classifier", "detector")
+            val version = root.requiredInt("schema_version")
+            require(version == 1) { "Unsupported contract schema version: $version" }
+            val kind = root.requiredEnum<ModelKind>("model_kind")
+            val artifact = root.requiredObject("artifact").also { it.only("sha256") }
+            val artifactHash = artifact.requiredString("sha256").also(::requireSha256)
+
+            val inputObject = root.requiredObject("input").also { it.only("name", "shape", "layout", "dtype") }
+            val input = ModelInput(
+                inputObject.requiredString("name").also { require(it.isNotBlank()) { "Input name is required" } },
+                inputObject.requiredIntArray("shape"),
+                inputObject.requiredEnum("layout"),
+                inputObject.requiredEnum("dtype"),
+            )
+            require(input.shape.size == 4) { "Input shape must have rank four" }
+            require(input.shape.all { it > 0 }) { "Input dimensions must be positive" }
+            require(input.shape[0] == 1) { "Only batch size one is supported" }
+            require(input.shape[if (input.layout == TensorLayout.NHWC) 3 else 1] == 3) { "Input must have exactly three channels" }
+
+            val prepObject = root.requiredObject("preprocessing").also { it.only("resize_policy", "resize_filter", "channel_order", "scale", "offset", "pad_value") }
+            val preprocessing = ImagePreprocessing(
+                prepObject.requiredEnum("resize_policy"), prepObject.requiredEnum("resize_filter"), prepObject.requiredEnum("channel_order"),
+                prepObject.requiredFiniteDouble("scale"), prepObject.requiredFiniteDouble("offset"), prepObject.requiredInt("pad_value"),
+            )
+            require(preprocessing.padValue in 0..255) { "Padding value must be a byte" }
+
+            val outputsArray = root.requiredArray("outputs")
+            require(outputsArray.length() > 0) { "At least one output tensor is required" }
+            val outputs = (0 until outputsArray.length()).map { index ->
+                val output = outputsArray.getJSONObject(index).also { it.only("name", "role", "shape", "dtype") }
+                ModelTensor(
+                    output.requiredString("name").also { require(it.isNotBlank()) { "Output name is required" } },
+                    output.requiredEnum("role"),
+                    output.requiredIntArray("shape").also { shape ->
+                        require(shape.isNotEmpty() && shape.all { it > 0 }) { "Output dimensions must be positive" }
+                    },
+                    output.requiredEnum("dtype"),
+                )
             }
-        }
+            require(outputs.map { it.name }.distinct().size == outputs.size) { "Output tensor names must be unique" }
+            require(outputs.map { it.role }.distinct().size == outputs.size) { "Output tensor roles must be unique" }
+            require(outputs.all { it.dtype == TensorDataType.FLOAT32 }) { "Only FLOAT32 outputs are supported" }
 
-        private fun parseClassifier(schema: Int, root: JsonObject): Classifier {
-            val common = parseCommon(root)
-            val output = root.requiredObject("output")
-            val labels = output.requiredStringList("labels")
-            require(labels.size == 53) { "Classifier contract must contain exactly 53 labels" }
-            require(labels.toSet().size == labels.size) { "Classifier output labels must be unique" }
-            require(labels[52] == "BACK") { "BACK must occupy canonical classifier index 52" }
-            require(labels == canonicalClassifierLabels) { "Classifier output label order is not canonical" }
-            labels.forEach { label ->
-                require(CardLabelCodec.encode(CardLabelCodec.decode(label)) == label) {
-                    "Classifier label is not canonical: $label"
+            val labels = if (root.has("labels") && !root.isNull("labels")) root.requiredArray("labels").toStringList("labels") else emptyList()
+            val labelsHash = if (root.has("labels_sha256") && !root.isNull("labels_sha256")) root.requiredString("labels_sha256").also(::requireSha256) else null
+            val classifier = if (kind == ModelKind.CLASSIFIER) {
+                require(root.has("classifier") && !root.isNull("classifier")) { "Classifier semantics are required" }
+                root.requiredObject("classifier").also { it.only("top_k", "score_semantics") }.let {
+                    ClassifierSemantics(it.requiredInt("top_k"), it.requiredEnum("score_semantics"))
                 }
+            } else null
+            val detector = if (kind == ModelKind.DETECTOR) {
+                require(root.has("detector") && !root.isNull("detector")) { "Detector semantics are required" }
+                parseDetector(root.requiredObject("detector"))
+            } else null
+
+            if (kind == ModelKind.CLASSIFIER) {
+                require(!root.has("detector") || root.isNull("detector")) { "Classifier contract cannot declare detector semantics" }
+                require(labels.size == 53) { "Classifier must declare exactly 53 labels" }
+                require(labels.distinct().size == labels.size) { "Classifier labels must be unique" }
+                require(labels[52] == "BACK") { "BACK must be canonical classifier index 52" }
+                require(labelsHash != null) { "Classifier label SHA-256 is required" }
+                labels.forEach { label ->
+                    try { com.cardviper.app.vision.CardLabelCodec.decode(label) }
+                    catch (failure: Exception) { throw IllegalArgumentException("Invalid classifier label: $label", failure) }
+                }
+                require(classifier!!.topK in 1..53) { "Classifier top_k must be between 1 and 53" }
+                require(outputs.size == 1 && outputs.single().role == OutputRole.CLASSIFIER_SCORES) { "Classifier must have one score output" }
+                require(outputs.single().shape.last() == 53) { "Classifier output width must be 53" }
+                require(outputs.single().shape == listOf(1, 53)) { "Classifier score output must have shape [1,53]" }
+                require(outputs.single().dtype == TensorDataType.FLOAT32) { "Classifier score output must be FLOAT32" }
+            } else {
+                require(labels.isEmpty()) { "Detector semantic classes are declared in detector, not labels" }
+                require(labelsHash == null) { "Detector contracts cannot declare classifier labels hash" }
+                require(classifier == null) { "Detector contract cannot declare classifier semantics" }
+                validateDetectorOutputs(outputs, detector!!)
             }
-            val labelsSha = output.requiredString("labels_sha256")
-            require(SHA256_RE.matches(labelsSha)) { "labels_sha256 must be lowercase SHA-256 hex" }
-            return Classifier(
-                schemaVersion = schema,
-                artifact = common.artifact,
-                input = common.input,
-                preprocessing = common.preprocessing,
-                resize = common.resize,
-                labels = labels,
-                labelsSha256 = labelsSha,
-                scoreDtype = output.requiredEnum("score_dtype"),
+
+            return LiteRtModelContract(version, kind, artifactHash, labelsHash, input, preprocessing, outputs, labels, classifier, detector)
+        }
+
+        private fun parseDetector(obj: JSONObject): DetectorSemantics {
+            obj.only("semantic_classes", "card_class_index", "boxes", "scores", "classes", "count", "nms")
+            val classes = obj.requiredArray("semantic_classes").toStringList("semantic_classes")
+            require(classes == listOf("CARD")) { "Detector semantic classes must be exactly [CARD]" }
+            val classIndex = obj.requiredInt("card_class_index")
+            require(classIndex == 0) { "The CARD class index must be zero" }
+            val boxes = obj.requiredObject("boxes").also { it.only("tensor", "coordinate_order", "coordinate_units") }
+            val scores = obj.requiredObject("scores").also { it.only("tensor") }
+            val detectorClasses = obj.requiredObject("classes").also { it.only("tensor") }
+            val count = if (!obj.has("count") || obj.isNull("count")) null else obj.requiredObject("count").also { it.only("tensor") }.requiredString("tensor")
+            val nmsObj = obj.requiredObject("nms").also { it.only("ownership", "score_threshold", "iou_threshold") }
+            val nms = DetectorNms(
+                nmsObj.requiredEnum("ownership"), nmsObj.requiredUnitFloat("score_threshold"), nmsObj.requiredUnitFloat("iou_threshold"),
+            )
+            return DetectorSemantics(
+                classes,
+                classIndex,
+                boxes.requiredString("tensor"),
+                boxes.requiredEnum("coordinate_order"),
+                boxes.requiredEnum("coordinate_units"),
+                scores.requiredString("tensor"),
+                detectorClasses.requiredString("tensor"),
+                count,
+                nms,
             )
         }
 
-        private fun parseDetector(schema: Int, root: JsonObject): Detector {
-            val common = parseCommon(root)
-            val semantic = root.requiredStringList("semantic_classes")
-            require(semantic == listOf("CARD")) { "Detector semantic_classes must be exactly [CARD]" }
-            val output = root.requiredObject("output")
-            val countValue = output["count"]
-            val count = when (countValue) {
-                null, JsonNull -> null
-                else -> parseRole(countValue.asObject("output.count"), "count")
+        private fun validateDetectorOutputs(outputs: List<ModelTensor>, detector: DetectorSemantics) {
+            val byRole = outputs.associateBy { it.role }
+            require(byRole.keys.containsAll(listOf(OutputRole.DETECTION_BOXES, OutputRole.DETECTION_SCORES, OutputRole.DETECTION_CLASSES))) {
+                "Detector box, score, and class output tensors are required"
             }
-            val scoreThreshold = output.requiredFiniteFloat("score_threshold")
-            val nmsThreshold = output.requiredFiniteFloat("nms_threshold")
-            require(scoreThreshold in 0f..1f) { "score_threshold must be in 0..1" }
-            require(nmsThreshold in 0f..1f) { "nms_threshold must be in 0..1" }
-            val detectorOutput = DetectorOutputContract(
-                boxes = parseRole(output.requiredObject("boxes"), "boxes"),
-                scores = parseRole(output.requiredObject("scores"), "scores"),
-                classes = parseRole(output.requiredObject("classes"), "classes"),
-                count = count,
-                boxOrder = output.requiredEnum("box_order"),
-                boxUnits = output.requiredEnum("box_units"),
-                nmsOwnership = output.requiredEnum("nms_ownership"),
-                scoreThreshold = scoreThreshold,
-                nmsThreshold = nmsThreshold,
-                cardClassIndex = output.requiredInt("card_class_index").also {
-                    require(it >= 0) { "card_class_index cannot be negative" }
-                },
-            )
-            val indices = listOfNotNull(
-                detectorOutput.boxes.index,
-                detectorOutput.scores.index,
-                detectorOutput.classes.index,
-                detectorOutput.count?.index,
-            )
-            require(indices.toSet().size == indices.size) { "Detector tensor role indices must be unique" }
-            return Detector(
-                schemaVersion = schema,
-                artifact = common.artifact,
-                input = common.input,
-                preprocessing = common.preprocessing,
-                resize = common.resize,
-                semanticClasses = semantic,
-                output = detectorOutput,
-            )
+            require(byRole.keys.all { it in setOf(OutputRole.DETECTION_BOXES, OutputRole.DETECTION_SCORES, OutputRole.DETECTION_CLASSES, OutputRole.DETECTION_COUNT) }) {
+                "Detector has an unsupported output role"
+            }
+            require(outputs.size == if (detector.countTensor == null) 3 else 4) { "Detector outputs do not match count tensor declaration" }
+            require(byRole.getValue(OutputRole.DETECTION_BOXES).name == detector.boxesTensor) { "Box tensor declaration does not match output list" }
+            require(byRole.getValue(OutputRole.DETECTION_SCORES).name == detector.scoresTensor) { "Score tensor declaration does not match output list" }
+            require(byRole.getValue(OutputRole.DETECTION_CLASSES).name == detector.classesTensor) { "Class tensor declaration does not match output list" }
+            require(byRole[OutputRole.DETECTION_COUNT]?.name == detector.countTensor) { "Count tensor declaration does not match output list" }
+            val boxes = byRole.getValue(OutputRole.DETECTION_BOXES)
+            require(boxes.shape.size == 3 && boxes.shape[0] == 1) { "Detection boxes must have shape [1,N,4]" }
+            require(boxes.shape.last() == 4) { "Detection boxes must have a final dimension of four" }
+            listOf(OutputRole.DETECTION_SCORES, OutputRole.DETECTION_CLASSES).forEach { role ->
+                val tensor = byRole.getValue(role)
+                require(tensor.shape == listOf(1, boxes.shape[1])) { "Detection tensor lengths must agree" }
+            }
+            byRole[OutputRole.DETECTION_COUNT]?.let { require(it.shape == listOf(1)) { "Detection count tensor must have shape [1]" } }
         }
 
-        private data class Common(
-            val artifact: ArtifactContract,
-            val input: InputTensorContract,
-            val preprocessing: PreprocessingContract,
-            val resize: ResizeContract,
-        )
-
-        private fun parseCommon(root: JsonObject): Common {
-            val artifactObject = root.requiredObject("artifact")
-            val sha = artifactObject.requiredString("sha256")
-            require(SHA256_RE.matches(sha)) { "artifact sha256 must be lowercase SHA-256 hex" }
-            val size = artifactObject.requiredLong("size_bytes")
-            require(size > 0L) { "artifact size_bytes must be positive" }
-
-            val inputObject = root.requiredObject("input")
-            val width = inputObject.requiredInt("width")
-            val height = inputObject.requiredInt("height")
-            val channels = inputObject.requiredInt("channels")
-            require(width > 0 && height > 0 && channels > 0) { "Input tensor dimensions must be positive" }
-            val elementCount = width.toLong() * height.toLong() * channels.toLong()
-            require(elementCount <= Int.MAX_VALUE / Float.SIZE_BYTES) { "Input tensor is too large" }
-            require(channels == 3) { "CardViper vision input requires exactly three channels" }
-            val input = InputTensorContract(
-                width = width,
-                height = height,
-                channels = channels,
-                dtype = inputObject.requiredEnum("dtype"),
-                layout = inputObject.requiredEnum("layout"),
-            )
-
-            val preprocessingObject = root.requiredObject("preprocessing")
-            val paddingValue = preprocessingObject.requiredInt("padding_value")
-            require(paddingValue in 0..255) { "padding_value must be an unsigned channel byte" }
-            val normalizationValue = preprocessingObject["normalization"]
-            val normalization = when (normalizationValue) {
-                null, JsonNull -> null
-                else -> normalizationValue.asObject("preprocessing.normalization").let { obj ->
-                    NormalizationContract(
-                        multiplier = obj.requiredFiniteFloat("multiplier"),
-                        offset = obj.requiredFiniteFloat("offset"),
-                    )
-                }
-            }
-            when (input.dtype) {
-                TensorDType.FLOAT32 -> require(normalization != null) {
-                    "FLOAT32 input requires an explicit normalization contract"
-                }
-                TensorDType.UINT8 -> require(normalization == null) {
-                    "UINT8 input must not invent float normalization"
-                }
-            }
-            val preprocessing = PreprocessingContract(
-                channelOrder = preprocessingObject.requiredEnum("channel_order"),
-                normalization = normalization,
-                paddingValue = paddingValue,
-                resampling = preprocessingObject.requiredEnum("resampling"),
-            )
-            val resize = ResizeContract(root.requiredObject("resize").requiredEnum("policy"))
-            return Common(ArtifactContract(sha, size), input, preprocessing, resize)
-        }
-
-        private fun parseRole(obj: JsonObject, name: String): TensorRoleContract {
-            val index = obj.requiredInt("index")
-            require(index >= 0) { "$name tensor index cannot be negative" }
-            return TensorRoleContract(index)
+        private fun requireSha256(value: String) {
+            require(value.matches(Regex("[0-9a-fA-F]{64}"))) { "SHA-256 must contain exactly 64 hexadecimal characters" }
         }
     }
 }
 
-private sealed interface JsonValue
-private data class JsonObject(val values: Map<String, JsonValue>) : JsonValue {
-    operator fun get(key: String): JsonValue? = values[key]
-}
-private data class JsonArray(val values: List<JsonValue>) : JsonValue
-private data class JsonString(val value: String) : JsonValue
-private data class JsonNumber(val token: String) : JsonValue
-private data class JsonBoolean(val value: Boolean) : JsonValue
-private data object JsonNull : JsonValue
-
-private fun JsonValue.asObject(context: String): JsonObject = this as? JsonObject
-    ?: throw IllegalArgumentException("$context must be a JSON object")
-
-private fun JsonObject.requiredValue(key: String): JsonValue = values[key]
-    ?: throw IllegalArgumentException("Missing required contract field: $key")
-
-private fun JsonObject.requiredObject(key: String): JsonObject = requiredValue(key).asObject(key)
-
-private fun JsonObject.requiredString(key: String): String =
-    (requiredValue(key) as? JsonString)?.value
-        ?: throw IllegalArgumentException("$key must be a string")
-
-private fun JsonObject.requiredStringList(key: String): List<String> {
-    val array = requiredValue(key) as? JsonArray
-        ?: throw IllegalArgumentException("$key must be an array")
-    return array.values.mapIndexed { index, value ->
-        (value as? JsonString)?.value
-            ?: throw IllegalArgumentException("$key[$index] must be a string")
-    }
-}
-
-private fun JsonObject.requiredInt(key: String): Int {
-    val token = (requiredValue(key) as? JsonNumber)?.token
-        ?: throw IllegalArgumentException("$key must be an integer")
-    require(!token.contains('.') && !token.contains('e', ignoreCase = true)) { "$key must be an integer" }
-    return token.toIntOrNull() ?: throw IllegalArgumentException("$key is outside Int range")
-}
-
-private fun JsonObject.requiredLong(key: String): Long {
-    val token = (requiredValue(key) as? JsonNumber)?.token
-        ?: throw IllegalArgumentException("$key must be an integer")
-    require(!token.contains('.') && !token.contains('e', ignoreCase = true)) { "$key must be an integer" }
-    return token.toLongOrNull() ?: throw IllegalArgumentException("$key is outside Long range")
-}
-
-private fun JsonObject.requiredFiniteFloat(key: String): Float {
-    val token = (requiredValue(key) as? JsonNumber)?.token
-        ?: throw IllegalArgumentException("$key must be a number")
-    val result = token.toFloatOrNull() ?: throw IllegalArgumentException("$key is not a float")
-    require(result.isFinite()) { "$key must be finite" }
-    return result
-}
-
-private inline fun <reified T : Enum<T>> JsonObject.requiredEnum(key: String): T {
+private inline fun <reified T : Enum<T>> JSONObject.requiredEnum(key: String): T {
     val raw = requiredString(key)
     return enumValues<T>().firstOrNull { it.name == raw }
-        ?: throw IllegalArgumentException("Unsupported $key value: $raw")
+        ?: throw IllegalArgumentException("Unsupported ${T::class.simpleName} value '$raw' for $key")
 }
 
-private object StrictJson {
-    fun parse(source: String): JsonValue {
-        val parser = Parser(source)
-        val value = parser.parseValue()
-        parser.skipWhitespace()
-        require(parser.atEnd()) { "Unexpected trailing JSON content" }
-        return value
+private fun JSONObject.only(vararg allowed: String) {
+    val keys = keys()
+    while (keys.hasNext()) {
+        val key = keys.next()
+        require(key in allowed) { "Unsupported field '$key'" }
     }
+}
 
-    private class Parser(private val source: String) {
-        private var at = 0
-        fun atEnd(): Boolean = at == source.length
-        fun skipWhitespace() {
-            while (at < source.length && source[at].isWhitespace()) at++
-        }
-
-        fun parseValue(): JsonValue {
-            skipWhitespace()
-            require(at < source.length) { "Unexpected end of JSON" }
-            return when (source[at]) {
-                '{' -> parseObject()
-                '[' -> parseArray()
-                '"' -> JsonString(parseString())
-                't' -> { expectLiteral("true"); JsonBoolean(true) }
-                'f' -> { expectLiteral("false"); JsonBoolean(false) }
-                'n' -> { expectLiteral("null"); JsonNull }
-                '-', in '0'..'9' -> JsonNumber(parseNumber())
-                else -> throw IllegalArgumentException("Unexpected JSON token at offset $at")
-            }
-        }
-
-        private fun parseObject(): JsonObject {
-            expect('{')
-            skipWhitespace()
-            val result = linkedMapOf<String, JsonValue>()
-            if (peek('}')) { at++; return JsonObject(result) }
-            while (true) {
-                skipWhitespace()
-                require(peek('"')) { "Object key must be a JSON string" }
-                val key = parseString()
-                require(key !in result) { "Duplicate JSON key: $key" }
-                skipWhitespace()
-                expect(':')
-                result[key] = parseValue()
-                skipWhitespace()
-                when {
-                    peek(',') -> at++
-                    peek('}') -> { at++; return JsonObject(result) }
-                    else -> throw IllegalArgumentException("Expected ',' or '}' at offset $at")
-                }
-            }
-        }
-
-        private fun parseArray(): JsonArray {
-            expect('[')
-            skipWhitespace()
-            val result = mutableListOf<JsonValue>()
-            if (peek(']')) { at++; return JsonArray(result) }
-            while (true) {
-                result += parseValue()
-                skipWhitespace()
-                when {
-                    peek(',') -> at++
-                    peek(']') -> { at++; return JsonArray(result) }
-                    else -> throw IllegalArgumentException("Expected ',' or ']' at offset $at")
-                }
-            }
-        }
-
-        private fun parseString(): String {
-            expect('"')
-            val result = StringBuilder()
-            val backslash = 92.toChar()
-            while (at < source.length) {
-                val ch = source[at++]
-                when (ch) {
-                    '"' -> return result.toString()
-                    backslash -> {
-                        require(at < source.length) { "Unterminated JSON escape" }
-                        when (val escaped = source[at++]) {
-                            '"', '/', backslash -> result.append(escaped)
-                            'b' -> result.append(8.toChar())
-                            'f' -> result.append(12.toChar())
-                            'n' -> result.append(10.toChar())
-                            'r' -> result.append(13.toChar())
-                            't' -> result.append(9.toChar())
-                            'u' -> {
-                                require(at + 4 <= source.length) { "Incomplete Unicode escape" }
-                                val code = source.substring(at, at + 4).toIntOrNull(16)
-                                    ?: throw IllegalArgumentException("Invalid Unicode escape")
-                                result.append(code.toChar())
-                                at += 4
-                            }
-                            else -> throw IllegalArgumentException(
-                                "Unsupported JSON escape code: " + escaped.code,
-                            )
-                        }
-                    }
-                    else -> {
-                        require(ch.code >= 0x20) { "Control character in JSON string" }
-                        result.append(ch)
-                    }
-                }
-            }
-            throw IllegalArgumentException("Unterminated JSON string")
-        }
-
-        private fun parseNumber(): String {
-            val start = at
-            if (peek('-')) at++
-            require(at < source.length) { "Invalid JSON number" }
-            if (peek('0')) {
-                at++
-            } else {
-                require(source[at] in '1'..'9') { "Invalid JSON number" }
-                while (at < source.length && source[at].isDigit()) at++
-            }
-            if (peek('.')) {
-                at++
-                val fractionStart = at
-                while (at < source.length && source[at].isDigit()) at++
-                require(at > fractionStart) { "Invalid JSON fraction" }
-            }
-            if (at < source.length && (source[at] == 'e' || source[at] == 'E')) {
-                at++
-                if (peek('+') || peek('-')) at++
-                val exponentStart = at
-                while (at < source.length && source[at].isDigit()) at++
-                require(at > exponentStart) { "Invalid JSON exponent" }
-            }
-            return source.substring(start, at)
-        }
-
-        private fun expectLiteral(literal: String) {
-            require(source.startsWith(literal, at)) { "Expected $literal at offset $at" }
-            at += literal.length
-        }
-
-        private fun expect(ch: Char) {
-            require(peek(ch)) { "Expected '$ch' at offset $at" }
-            at++
-        }
-
-        private fun peek(ch: Char): Boolean = at < source.length && source[at] == ch
+private fun JSONObject.requiredObject(key: String): JSONObject = get(key) as? JSONObject
+    ?: throw IllegalArgumentException("$key must be an object")
+private fun JSONObject.requiredArray(key: String): JSONArray = get(key) as? JSONArray
+    ?: throw IllegalArgumentException("$key must be an array")
+private fun JSONObject.requiredString(key: String): String = get(key) as? String
+    ?: throw IllegalArgumentException("$key must be a string")
+private fun JSONObject.requiredInt(key: String): Int {
+    val value = get(key) as? Number ?: throw IllegalArgumentException("$key must be an integer")
+    val doubleValue = value.toDouble()
+    require(doubleValue.isFinite() && doubleValue % 1.0 == 0.0 && doubleValue in Int.MIN_VALUE.toDouble()..Int.MAX_VALUE.toDouble()) { "$key must be an integer" }
+    return doubleValue.toInt()
+}
+private fun JSONObject.requiredFiniteDouble(key: String): Double {
+    val value = (get(key) as? Number)?.toDouble() ?: throw IllegalArgumentException("$key must be numeric")
+    require(value.isFinite()) { "$key must be finite" }
+    return value
+}
+private fun JSONObject.requiredUnitFloat(key: String): Float {
+    val value = requiredFiniteDouble(key)
+    require(value in 0.0..1.0) { "$key must be within 0..1" }
+    return value.toFloat()
+}
+private fun JSONObject.requiredIntArray(key: String): List<Int> {
+    val array = requiredArray(key)
+    return (0 until array.length()).map { index ->
+        val number = array.get(index) as? Number ?: throw IllegalArgumentException("$key entries must be integers")
+        val value = number.toDouble()
+        require(value.isFinite() && value % 1.0 == 0.0 && value in Int.MIN_VALUE.toDouble()..Int.MAX_VALUE.toDouble()) { "$key entries must be integers" }
+        value.toInt()
     }
+}
+private fun JSONArray.toStringList(field: String): List<String> = (0 until length()).map { index ->
+    get(index) as? String ?: throw IllegalArgumentException("$field entries must be strings")
 }

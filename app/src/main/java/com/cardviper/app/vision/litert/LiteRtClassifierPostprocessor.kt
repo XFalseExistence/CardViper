@@ -1,37 +1,36 @@
 package com.cardviper.app.vision.litert
 
+import com.cardviper.app.vision.CardIdentity
 import com.cardviper.app.vision.CardLabelCodec
-import com.cardviper.app.vision.CardRecognition
-import com.cardviper.app.vision.RankedIdentity
 
+data class ClassifierAlternative(val label: String, val identity: CardIdentity, val confidence: Float)
+data class ClassifierPrediction(
+    val label: String,
+    val identity: CardIdentity,
+    val confidence: Float,
+    val alternatives: List<ClassifierAlternative>,
+)
+
+/** Maps classifier probabilities only when fixture/real labels exactly match the caller's canonical sequence. */
 object LiteRtClassifierPostprocessor {
-    fun process(
-        scores: FloatArray,
-        contract: LiteRtModelContract.Classifier,
-        alternativeCount: Int = 3,
-    ): CardRecognition {
-        require(alternativeCount >= 0) { "alternativeCount cannot be negative" }
-        require(contract.labels == LiteRtModelContract.canonicalClassifierLabels) {
-            "Classifier label order differs from the canonical export order"
+    fun process(scores: FloatArray, contract: LiteRtModelContract, canonicalLabels: List<String>): ClassifierPrediction {
+        require(contract.kind == ModelKind.CLASSIFIER) { "Classifier contract required" }
+        require(canonicalLabels.size == 53 && canonicalLabels.distinct().size == 53 && canonicalLabels[52] == "BACK") {
+            "Canonical classifier labels must contain 53 unique entries with BACK at index 52"
         }
-        require(scores.size == contract.labels.size) {
-            "Classifier output width ${scores.size} does not match ${contract.labels.size} labels"
-        }
+        require(contract.labels == canonicalLabels) { "Contract label order does not match canonical labels" }
+        require(scores.size == 53) { "Classifier output width must be exactly 53" }
         scores.forEachIndexed { index, score ->
-            require(score.isFinite()) { "Classifier score[$index] must be finite" }
-            require(score in 0f..1f) { "Classifier score[$index] must be in 0..1" }
+            require(score.isFinite() && score in 0f..1f) { "Classifier score at index $index is not a finite probability" }
         }
-        val ordered = scores.indices.sortedWith(
-            compareByDescending<Int> { scores[it] }.thenBy { it },
-        )
-        val best = ordered.first()
-        val alternatives = ordered.drop(1).take(alternativeCount).map { index ->
-            RankedIdentity(CardLabelCodec.decode(contract.labels[index]), scores[index])
-        }
-        return CardRecognition(
-            identity = CardLabelCodec.decode(contract.labels[best]),
-            confidence = scores[best],
-            alternatives = alternatives,
+        val bestIndex = scores.indices.maxWithOrNull(compareBy<Int> { scores[it] }.thenByDescending { it })!!
+        val alternatives = scores.indices.asSequence().filter { it != bestIndex }
+            .sortedWith(compareByDescending<Int> { scores[it] }.thenBy { it })
+            .take(contract.classifier!!.topK - 1).map { index ->
+                ClassifierAlternative(canonicalLabels[index], CardLabelCodec.decode(canonicalLabels[index]), scores[index])
+            }.toList()
+        return ClassifierPrediction(
+            canonicalLabels[bestIndex], CardLabelCodec.decode(canonicalLabels[bestIndex]), scores[bestIndex], alternatives,
         )
     }
 }

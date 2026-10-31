@@ -1,42 +1,46 @@
 package com.cardviper.app.vision.litert
 
+import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
-data class RuntimeInputMetadata(
-    val width: Int,
-    val height: Int,
-    val channels: Int,
-    val dtype: TensorDType,
-    val layout: TensorLayout,
-)
+data class ObservedTensor(val name: String, val shape: List<Int>, val dtype: TensorDataType)
+data class TensorSignature(val input: ObservedTensor, val outputs: List<ObservedTensor>)
 
+/** Verifies local bytes and observed runtime metadata before any future adapter can open a model. */
 object LiteRtArtifactValidator {
-    fun validateModelBytes(modelBytes: ByteArray, contract: LiteRtModelContract) {
-        require(modelBytes.isNotEmpty()) { "Model artifact cannot be empty" }
-        require(modelBytes.size.toLong() == contract.artifact.sizeBytes) {
-            "Model artifact size does not match contract"
-        }
-        require(sha256(modelBytes) == contract.artifact.sha256) {
-            "Model artifact SHA-256 does not match contract"
+    fun validate(
+        contract: LiteRtModelContract,
+        modelBytes: ByteArray,
+        labelsBytes: ByteArray?,
+        observed: TensorSignature,
+    ) {
+        validateDeclaredBytes(contract, modelBytes, labelsBytes)
+        validateObservedSignature(contract, observed)
+    }
+
+    fun validateDeclaredBytes(contract: LiteRtModelContract, modelBytes: ByteArray, labelsBytes: ByteArray?) {
+        require(modelBytes.isNotEmpty()) { "Model artifact is empty" }
+        require(sha256(modelBytes).equals(contract.artifactSha256, ignoreCase = true)) { "Model artifact SHA-256 mismatch" }
+        if (contract.kind == ModelKind.CLASSIFIER) {
+            require(labelsBytes != null) { "Classifier labels file is required" }
+            val labelHash = contract.labelsSha256 ?: throw IllegalArgumentException("Classifier labels SHA-256 is required")
+            require(sha256(labelsBytes).equals(labelHash, ignoreCase = true)) { "Classifier labels SHA-256 mismatch" }
+            val text = String(labelsBytes, StandardCharsets.UTF_8)
+            require(!text.startsWith('\uFEFF') && !text.contains('\r') && text.endsWith('\n')) { "Classifier labels must be UTF-8 LF lines with a final newline" }
+            val labels = text.dropLast(1).split('\n')
+            require(labels == contract.labels) { "Classifier labels file does not match contract order" }
+        } else {
+            require(labelsBytes == null) { "Detector does not consume a classifier labels file" }
         }
     }
 
-    fun validateInputMetadata(metadata: RuntimeInputMetadata, contract: LiteRtModelContract) {
-        require(metadata.width == contract.input.width && metadata.height == contract.input.height &&
-            metadata.channels == contract.input.channels && metadata.dtype == contract.input.dtype &&
-            metadata.layout == contract.input.layout) {
-            "Runtime input tensor metadata does not match contract"
-        }
-    }
-
-    fun validateClassifierLabels(labelBytes: ByteArray, contract: LiteRtModelContract.Classifier) {
-        require(sha256(labelBytes) == contract.labelsSha256) { "labels SHA-256 does not match contract" }
-        val text = labelBytes.toString(Charsets.UTF_8)
-        require(!text.contains('\r')) { "labels.txt must use LF line endings" }
-        val labels = text.split('\n').let { if (it.lastOrNull().isNullOrEmpty()) it.dropLast(1) else it }
-        require(labels == contract.labels) { "labels.txt order/content does not match classifier contract" }
+    fun validateObservedSignature(contract: LiteRtModelContract, observed: TensorSignature) {
+        val expectedInput = ObservedTensor(contract.input.name, contract.input.shape, contract.input.dtype)
+        val expectedOutputs = contract.outputs.map { ObservedTensor(it.name, it.shape, it.dtype) }
+        require(observed.input == expectedInput) { "Observed model input does not match contract" }
+        require(observed.outputs == expectedOutputs) { "Observed model outputs do not match contract" }
     }
 
     fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
-        .digest(bytes).joinToString("") { "%02x".format(it) }
+        .digest(bytes).joinToString("") { byte -> "%02x".format(byte) }
 }

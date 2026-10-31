@@ -1,0 +1,9 @@
+{
+  "source": "ml/cardviper_ml/detector_geometry.py ResizeTransform, letterbox policy",
+  "cases": [
+    { "source": [8, 4], "model": [4, 4], "box": [0, 0, 8, 4], "model_box": [0, 1, 4, 3] },
+    { "source": [4, 8], "model": [4, 4], "box": [0, 0, 4, 8], "model_box": [1, 0, 3, 4] },
+    { "source": [4, 4], "model": [4, 4], "box": [1, 1, 3, 3], "model_box": [1, 1, 3, 3] },
+    { "source": [16, 1], "model": [4, 4], "box": [0, 0, 16, 1], "model_box": [0, 1.875, 4, 2.125] }
+  ]
+}

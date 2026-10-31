@@ -1,102 +1,65 @@
 package com.cardviper.app.vision.litert
 
 import com.cardviper.app.vision.CardIdentity
-import com.cardviper.app.vision.CardLabelCodec
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertThrows
+import com.cardviper.app.model.CardRank
+import com.cardviper.app.model.CardSuit
+import com.cardviper.app.model.PlayingCard
+import org.junit.Assert.*
 import org.junit.Test
 
 class LiteRtClassifierPostprocessorTest {
-    private val contract = classifierContract()
-
-    @Test fun mapsAcByExactOutputIndex() {
-        val scores = FloatArray(53) { 0f }.also { it[0] = 0.9f }
-        val result = LiteRtClassifierPostprocessor.process(scores, contract)
-        assertEquals(CardLabelCodec.decode("AC"), result.identity)
-        assertEquals(0.9f, result.confidence, 0f)
+    @Test fun mapsExactly53ScoresIncludingBackAcTenHeartsAndKingSpades() {
+        val scores = FloatArray(53)
+        scores[0] = 0.3f
+        scores[38] = 0.8f
+        scores[51] = 0.5f
+        scores[52] = 1f
+        val prediction = LiteRtClassifierPostprocessor.process(scores, contract(), canonicalLabels())
+        assertEquals(CardIdentity.Back, prediction.identity)
+        assertEquals("BACK", prediction.label)
+        assertEquals(CardIdentity.Face(PlayingCard(CardRank.TEN, CardSuit.HEARTS)), prediction.alternatives[0].identity)
+        assertEquals(CardIdentity.Face(PlayingCard(CardRank.KING, CardSuit.SPADES)), prediction.alternatives[1].identity)
+        assertEquals(CardIdentity.Face(PlayingCard(CardRank.ACE, CardSuit.CLUBS)), prediction.alternatives[2].identity)
     }
 
-    @Test fun mapsTenHByExactOutputIndex() {
-        val index = contract.labels.indexOf("10H")
-        val scores = FloatArray(53) { 0.01f }.also { it[index] = 0.95f }
-        assertEquals(
-            CardLabelCodec.decode("10H"),
-            LiteRtClassifierPostprocessor.process(scores, contract).identity,
-        )
+    @Test fun tiesUseLowerCanonicalIndexAndConfidenceBoundariesAreInclusive() {
+        val scores = FloatArray(53)
+        scores[0] = 0f
+        scores[1] = 0f
+        val zero = LiteRtClassifierPostprocessor.process(scores, contract(), canonicalLabels())
+        assertEquals("AC", zero.label)
+        scores[0] = 1f
+        val one = LiteRtClassifierPostprocessor.process(scores, contract(), canonicalLabels())
+        assertEquals(1f, one.confidence)
     }
 
-    @Test fun mapsKsByExactOutputIndex() {
-        val index = contract.labels.indexOf("KS")
-        val scores = FloatArray(53) { 0f }.also { it[index] = 1f }
-        assertEquals(
-            CardLabelCodec.decode("KS"),
-            LiteRtClassifierPostprocessor.process(scores, contract).identity,
-        )
-    }
-
-    @Test fun mapsBackAtIndex52() {
-        val scores = FloatArray(53) { 0f }.also { it[52] = 1f }
-        assertEquals(CardIdentity.Back, LiteRtClassifierPostprocessor.process(scores, contract).identity)
-    }
-
-    @Test fun tiesAreDeterministicByLowerOutputIndex() {
-        val scores = FloatArray(53) { 0f }.also {
-            it[4] = 0.8f
-            it[5] = 0.8f
+    @Test fun rejectsWrongWidthNonfiniteScoresAndLabelOrderMismatch() {
+        assertThrows(IllegalArgumentException::class.java) { LiteRtClassifierPostprocessor.process(FloatArray(52), contract(), canonicalLabels()) }
+        listOf(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY).forEach { bad ->
+            val scores = FloatArray(53)
+            scores[2] = bad
+            assertThrows(IllegalArgumentException::class.java) { LiteRtClassifierPostprocessor.process(scores, contract(), canonicalLabels()) }
         }
-        assertEquals(
-            CardLabelCodec.decode(contract.labels[4]),
-            LiteRtClassifierPostprocessor.process(scores, contract).identity,
-        )
+        val wrongLabels = canonicalLabels().toMutableList().also { java.util.Collections.swap(it, 0, 1) }
+        assertThrows(IllegalArgumentException::class.java) { LiteRtClassifierPostprocessor.process(FloatArray(53), contract(), wrongLabels) }
     }
 
-    @Test fun rejectsNanAndInfinity() {
-        assertThrows(IllegalArgumentException::class.java) {
-            LiteRtClassifierPostprocessor.process(
-                FloatArray(53).also { it[0] = Float.NaN },
-                contract,
-            )
-        }
-        assertThrows(IllegalArgumentException::class.java) {
-            LiteRtClassifierPostprocessor.process(
-                FloatArray(53).also { it[0] = Float.POSITIVE_INFINITY },
-                contract,
-            )
-        }
+    @Test fun rejectsValuesOutsideConfidenceRange() {
+        val scores = FloatArray(53)
+        scores[10] = 1.01f
+        assertThrows(IllegalArgumentException::class.java) { LiteRtClassifierPostprocessor.process(scores, contract(), canonicalLabels()) }
     }
 
-    @Test fun rejectsWrongOutputWidth() {
-        assertThrows(IllegalArgumentException::class.java) {
-            LiteRtClassifierPostprocessor.process(FloatArray(52), contract)
-        }
+    @Test fun topKIncludesBestAndReturnsOnlyTopKMinusOneAlternatives() {
+        val base = contract()
+        val oneBest = base.copy(classifier = base.classifier!!.copy(topK = 1))
+        val result = LiteRtClassifierPostprocessor.process(FloatArray(53), oneBest, canonicalLabels())
+        assertEquals("AC", result.label)
+        assertTrue(result.alternatives.isEmpty())
     }
 
-    @Test fun rejectsConfidenceOutsideUnitInterval() {
-        assertThrows(IllegalArgumentException::class.java) {
-            LiteRtClassifierPostprocessor.process(
-                FloatArray(53).also { it[0] = 1.01f },
-                contract,
-            )
-        }
-        assertThrows(IllegalArgumentException::class.java) {
-            LiteRtClassifierPostprocessor.process(
-                FloatArray(53).also { it[0] = -0.01f },
-                contract,
-            )
-        }
-    }
-
-    @Test fun rejectsContractWhoseLabelOrderWasMutatedAfterParse() {
-        val labels = contract.labels.toMutableList().also {
-            val first = it[0]
-            it[0] = it[1]
-            it[1] = first
-        }
-        assertThrows(IllegalArgumentException::class.java) {
-            LiteRtClassifierPostprocessor.process(
-                FloatArray(53),
-                contract.copy(labels = labels),
-            )
-        }
-    }
+    private fun contract() = LiteRtModelContract.parse(fixture())
+    private fun fixture() = javaClass.getResource("/vision/classifier.TEST_ONLY.SYNTHETIC.NOT_PRODUCTION_CONTRACT.json")!!.readText()
+    private fun canonicalLabels(): List<String> = listOf("A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K")
+        .flatMap { rank -> listOf("C", "D", "H", "S").map { "$rank$it" } } + "BACK"
 }

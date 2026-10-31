@@ -1,120 +1,89 @@
 package com.cardviper.app.vision.litert
 
-import com.cardviper.app.vision.CardCandidate
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-/** Raw logical detector tensors after LiteRT extraction, before source-coordinate reversal. */
-data class DetectorOutputs(
-    val boxes: FloatArray,
-    val scores: FloatArray,
-    val classes: FloatArray,
-    val count: Float? = null,
-)
+data class DetectedCardBox(val box: FloatBox, val confidence: Float, val classIndex: Int)
 
+/** Converts the explicitly declared detector outputs to source pixels. It does not guess export semantics. */
 object LiteRtDetectorPostprocessor {
     fun process(
-        outputs: DetectorOutputs,
-        contract: LiteRtModelContract.Detector,
-        transform: ModelTransform,
-    ): List<CardCandidate> {
-        require(transform.modelWidth == contract.input.width && transform.modelHeight == contract.input.height) {
-            "Detector transform model size does not match contract input"
+        contract: LiteRtModelContract,
+        outputTensors: Map<String, FloatArray>,
+        sourceWidth: Int,
+        sourceHeight: Int,
+    ): List<DetectedCardBox> {
+        require(contract.kind == ModelKind.DETECTOR) { "Detector contract required" }
+        require(sourceWidth > 0 && sourceHeight > 0) { "Source dimensions must be positive" }
+        val semantics = contract.detector!!
+        val expectedNames = contract.outputs.map { it.name }.toSet()
+        require(outputTensors.keys == expectedNames) { "Output tensor names do not match detector contract" }
+        val boxes = outputTensors.getValue(semantics.boxesTensor)
+        val scores = outputTensors.getValue(semantics.scoresTensor)
+        val classes = outputTensors.getValue(semantics.classesTensor)
+        val boxTensor = contract.outputs.single { it.role == OutputRole.DETECTION_BOXES }
+        val capacity = boxTensor.shape[boxTensor.shape.lastIndex - 1]
+        require(boxes.size == capacity * 4 && scores.size == capacity && classes.size == capacity) {
+            "Detection tensor lengths do not match contract capacity $capacity"
         }
-        require(outputs.boxes.size % 4 == 0) { "Detector boxes length must be divisible by four" }
-        val capacity = outputs.boxes.size / 4
-        require(outputs.scores.size == capacity && outputs.classes.size == capacity) {
-            "Detector box/score/class tensor capacities must match"
-        }
-        val requestedCount = outputs.count?.let { count ->
-            require(count.isFinite() && count >= 0f && abs(count - count.toInt()) < 1e-4f) {
-                "Detector count must be a finite nonnegative integer value"
-            }
-            count.toInt().coerceAtMost(capacity)
+        val count = semantics.countTensor?.let { name ->
+            val values = outputTensors.getValue(name)
+            require(values.size == 1) { "Detection count tensor must contain one value" }
+            val raw = values[0]
+            require(raw.isFinite() && raw % 1f == 0f && raw in 0f..capacity.toFloat()) { "Detection count is invalid" }
+            raw.toInt()
         } ?: capacity
-
-        val decoded = buildList {
-            for (index in 0 until requestedCount) {
-                val score = outputs.scores[index]
-                val rawClass = outputs.classes[index]
-                require(score.isFinite()) { "Detector score[$index] must be finite" }
-                require(score in 0f..1f) { "Detector score[$index] must be in 0..1" }
-                require(rawClass.isFinite() && abs(rawClass - rawClass.toInt()) < 1e-4f) {
-                    "Detector class[$index] must be an integer-valued finite float"
-                }
-                require(rawClass.toInt() == contract.output.cardClassIndex) {
-                    "Detector produced unexpected class ${rawClass.toInt()}"
-                }
-                if (score < contract.output.scoreThreshold) continue
-                val base = index * 4
-                val raw = outputs.boxes.copyOfRange(base, base + 4)
-                require(raw.all { it.isFinite() }) { "Detector box[$index] must be finite" }
-                var modelRect = when (contract.output.boxOrder) {
-                    BoxOrder.YXYX -> FloatRect(raw[1], raw[0], raw[3], raw[2])
-                    BoxOrder.XYXY -> FloatRect(raw[0], raw[1], raw[2], raw[3])
-                }
-                if (contract.output.boxUnits == BoxUnits.NORMALIZED) {
-                    modelRect = FloatRect(
-                        modelRect.left * transform.modelWidth,
-                        modelRect.top * transform.modelHeight,
-                        modelRect.right * transform.modelWidth,
-                        modelRect.bottom * transform.modelHeight,
-                    )
-                }
-                val source = transform.modelToSource(modelRect)
-                val clamped = FloatRect(
-                    left = source.left.coerceIn(0f, transform.sourceWidth.toFloat()),
-                    top = source.top.coerceIn(0f, transform.sourceHeight.toFloat()),
-                    right = source.right.coerceIn(0f, transform.sourceWidth.toFloat()),
-                    bottom = source.bottom.coerceIn(0f, transform.sourceHeight.toFloat()),
-                )
-                if (clamped.right <= clamped.left || clamped.bottom <= clamped.top) continue
-                add(DecodedBox(clamped, score))
+        val transform = LiteRtResizeTransform(sourceWidth, sourceHeight, contract.input.width, contract.input.height, contract.preprocessing.resizePolicy)
+        val candidates = ArrayList<Pair<Int, DetectedCardBox>>(count)
+        for (index in 0 until count) {
+            val score = scores[index]
+            require(score.isFinite() && score in 0f..1f) { "Detection score at $index must be a finite probability" }
+            val rawClass = classes[index]
+            require(rawClass.isFinite() && rawClass % 1f == 0f && rawClass.toInt() == semantics.cardClassIndex) {
+                "Detection class at $index is not the declared CARD class"
             }
-        }
+            if (score < semantics.nms.scoreThreshold) continue
 
-        val selected = when (contract.output.nmsOwnership) {
-            NmsOwnership.EMBEDDED -> decoded
-            NmsOwnership.HOST -> hostNms(decoded, contract.output.nmsThreshold)
-        }
-        return selected.map { box ->
-            CardCandidate(
-                x = box.rect.left,
-                y = box.rect.top,
-                width = box.rect.right - box.rect.left,
-                height = box.rect.bottom - box.rect.top,
-                confidence = box.score,
+            val offset = index * 4
+            val raw = boxes.copyOfRange(offset, offset + 4)
+            require(raw.all(Float::isFinite)) { "Detection box at $index contains nonfinite coordinates" }
+            val x1: Float
+            val y1: Float
+            val x2: Float
+            val y2: Float
+            when (semantics.coordinateOrder) {
+                BoxCoordinateOrder.XYXY -> { x1 = raw[0]; y1 = raw[1]; x2 = raw[2]; y2 = raw[3] }
+                BoxCoordinateOrder.YXYX -> { y1 = raw[0]; x1 = raw[1]; y2 = raw[2]; x2 = raw[3] }
+            }
+            val unitScaleX = if (semantics.coordinateUnits == BoxCoordinateUnits.NORMALIZED) contract.input.width.toFloat() else 1f
+            val unitScaleY = if (semantics.coordinateUnits == BoxCoordinateUnits.NORMALIZED) contract.input.height.toFloat() else 1f
+            if (x2 <= x1 || y2 <= y1) continue
+            val sourceBox = transform.modelToSource(
+                FloatBox(x1 * unitScaleX, y1 * unitScaleY, x2 * unitScaleX, y2 * unitScaleY), clamp = true,
             )
+            if (sourceBox.width <= 0f || sourceBox.height <= 0f) continue
+            candidates += index to DetectedCardBox(sourceBox, score, semantics.cardClassIndex)
+        }
+        return when (semantics.nms.ownership) {
+            NmsOwnership.EMBEDDED -> candidates.map { it.second }
+            NmsOwnership.HOST -> hostNms(candidates, semantics.nms.iouThreshold)
         }
     }
 
-    private data class DecodedBox(val rect: FloatRect, val score: Float)
-
-    private fun hostNms(boxes: List<DecodedBox>, threshold: Float): List<DecodedBox> {
-        val remaining = boxes.sortedWith(
-            compareByDescending<DecodedBox> { it.score }
-                .thenBy { it.rect.top }
-                .thenBy { it.rect.left },
-        ).toMutableList()
-        val kept = mutableListOf<DecodedBox>()
-        while (remaining.isNotEmpty()) {
-            val next = remaining.removeAt(0)
-            kept += next
-            remaining.removeAll { iou(next.rect, it.rect) > threshold }
+    private fun hostNms(candidates: List<Pair<Int, DetectedCardBox>>, threshold: Float): List<DetectedCardBox> {
+        val ordered = candidates.sortedWith(compareByDescending<Pair<Int, DetectedCardBox>> { it.second.confidence }.thenBy { it.first })
+        val kept = ArrayList<DetectedCardBox>()
+        ordered.forEach { (_, candidate) ->
+            if (kept.none { intersectionOverUnion(it.box, candidate.box) > threshold }) kept += candidate
         }
         return kept
     }
 
-    private fun iou(a: FloatRect, b: FloatRect): Float {
-        val left = max(a.left, b.left)
-        val top = max(a.top, b.top)
-        val right = min(a.right, b.right)
-        val bottom = min(a.bottom, b.bottom)
-        val intersection = max(0f, right - left) * max(0f, bottom - top)
-        val areaA = max(0f, a.right - a.left) * max(0f, a.bottom - a.top)
-        val areaB = max(0f, b.right - b.left) * max(0f, b.bottom - b.top)
-        val union = areaA + areaB - intersection
+    private fun intersectionOverUnion(a: FloatBox, b: FloatBox): Float {
+        val width = max(0f, min(a.right, b.right) - max(a.left, b.left))
+        val height = max(0f, min(a.bottom, b.bottom) - max(a.top, b.top))
+        val intersection = width * height
+        val union = a.width * a.height + b.width * b.height - intersection
         return if (union <= 0f) 0f else intersection / union
     }
 }

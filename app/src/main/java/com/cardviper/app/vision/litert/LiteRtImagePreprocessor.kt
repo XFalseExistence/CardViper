@@ -1,179 +1,147 @@
 package com.cardviper.app.vision.litert
 
 import com.cardviper.app.vision.VisionImage
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import kotlin.math.floor
-import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-data class FloatRect(val left: Float, val top: Float, val right: Float, val bottom: Float) {
-    init {
-        require(listOf(left, top, right, bottom).all { it.isFinite() }) { "Rectangle coordinates must be finite" }
-    }
+data class FloatBox(val left: Float, val top: Float, val right: Float, val bottom: Float) {
+    init { require(listOf(left, top, right, bottom).all(Float::isFinite)) { "Box coordinates must be finite" } }
+    val width: Float get() = right - left
+    val height: Float get() = bottom - top
 }
 
-data class ModelTransform(
+/** Continuous edge-coordinate transform. Its letterbox arithmetic mirrors ml/cardviper_ml/detector_geometry.py. */
+data class LiteRtResizeTransform(
     val sourceWidth: Int,
     val sourceHeight: Int,
     val modelWidth: Int,
     val modelHeight: Int,
-    val contentWidth: Int,
-    val contentHeight: Int,
-    val padLeft: Int,
-    val padTop: Int,
+    val policy: ResizePolicy,
 ) {
     init {
         require(sourceWidth > 0 && sourceHeight > 0 && modelWidth > 0 && modelHeight > 0)
-        require(contentWidth > 0 && contentHeight > 0)
-        require(padLeft >= 0 && padTop >= 0)
-        require(padLeft + contentWidth <= modelWidth && padTop + contentHeight <= modelHeight)
     }
 
-    val scaleX: Float = contentWidth.toFloat() / sourceWidth
-    val scaleY: Float = contentHeight.toFloat() / sourceHeight
+    val scaleX: Double get() = if (policy == ResizePolicy.STRETCH) modelWidth.toDouble() / sourceWidth else scale
+    val scaleY: Double get() = if (policy == ResizePolicy.STRETCH) modelHeight.toDouble() / sourceHeight else scale
+    val scale: Double get() = min(modelWidth.toDouble() / sourceWidth, modelHeight.toDouble() / sourceHeight)
+    val padX: Double get() = (modelWidth - sourceWidth * scaleX) / 2.0
+    val padY: Double get() = (modelHeight - sourceHeight * scaleY) / 2.0
 
-    fun sourceToModel(rect: FloatRect): FloatRect = FloatRect(
-        left = rect.left * scaleX + padLeft,
-        top = rect.top * scaleY + padTop,
-        right = rect.right * scaleX + padLeft,
-        bottom = rect.bottom * scaleY + padTop,
-    )
-
-    fun modelToSource(rect: FloatRect): FloatRect = FloatRect(
-        left = (rect.left - padLeft) / scaleX,
-        top = (rect.top - padTop) / scaleY,
-        right = (rect.right - padLeft) / scaleX,
-        bottom = (rect.bottom - padTop) / scaleY,
-    )
-}
-
-data class PreprocessedImage(val tensorBytes: ByteArray, val transform: ModelTransform)
-
-object LiteRtImagePreprocessor {
-    fun preprocess(image: VisionImage, contract: LiteRtModelContract): PreprocessedImage {
-        val input = contract.input
-        val transform = buildTransform(image.width, image.height, input.width, input.height, contract.resize.policy)
-        val channelBytes = ByteArray(input.width * input.height * input.channels) {
-            contract.preprocessing.paddingValue.toByte()
-        }
-        for (modelY in 0 until transform.contentHeight) {
-            for (modelX in 0 until transform.contentWidth) {
-                val rgb = sample(
-                    image = image,
-                    targetX = modelX,
-                    targetY = modelY,
-                    targetWidth = transform.contentWidth,
-                    targetHeight = transform.contentHeight,
-                    mode = contract.preprocessing.resampling,
-                )
-                val outX = modelX + transform.padLeft
-                val outY = modelY + transform.padTop
-                val base = (outY * input.width + outX) * 3
-                when (contract.preprocessing.channelOrder) {
-                    ChannelOrder.RGB -> {
-                        channelBytes[base] = rgb[0].toByte()
-                        channelBytes[base + 1] = rgb[1].toByte()
-                        channelBytes[base + 2] = rgb[2].toByte()
-                    }
-                    ChannelOrder.BGR -> {
-                        channelBytes[base] = rgb[2].toByte()
-                        channelBytes[base + 1] = rgb[1].toByte()
-                        channelBytes[base + 2] = rgb[0].toByte()
-                    }
-                }
-            }
-        }
-        return when (input.dtype) {
-            TensorDType.UINT8 -> PreprocessedImage(channelBytes, transform)
-            TensorDType.FLOAT32 -> {
-                val normalization = requireNotNull(contract.preprocessing.normalization)
-                val packed = ByteBuffer.allocate(channelBytes.size * Float.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
-                channelBytes.forEach { byte ->
-                    val unsigned = byte.toInt() and 0xff
-                    packed.putFloat(unsigned * normalization.multiplier + normalization.offset)
-                }
-                PreprocessedImage(packed.array(), transform)
-            }
-        }
-    }
-
-    fun buildTransform(
-        sourceWidth: Int,
-        sourceHeight: Int,
-        modelWidth: Int,
-        modelHeight: Int,
-        policy: ResizePolicy,
-    ): ModelTransform {
-        require(sourceWidth > 0 && sourceHeight > 0 && modelWidth > 0 && modelHeight > 0)
-        return when (policy) {
-            ResizePolicy.STRETCH -> ModelTransform(
-                sourceWidth, sourceHeight, modelWidth, modelHeight,
-                contentWidth = modelWidth, contentHeight = modelHeight,
-                padLeft = 0, padTop = 0,
-            )
-            ResizePolicy.LETTERBOX -> {
-                val scale = min(
-                    modelWidth.toDouble() / sourceWidth,
-                    modelHeight.toDouble() / sourceHeight,
-                )
-                val contentWidth = max(1, (sourceWidth * scale).roundToInt()).coerceAtMost(modelWidth)
-                val contentHeight = max(1, (sourceHeight * scale).roundToInt()).coerceAtMost(modelHeight)
-                ModelTransform(
-                    sourceWidth, sourceHeight, modelWidth, modelHeight,
-                    contentWidth, contentHeight,
-                    padLeft = (modelWidth - contentWidth) / 2,
-                    padTop = (modelHeight - contentHeight) / 2,
-                )
-            }
-        }
-    }
-
-    private fun sample(
-        image: VisionImage,
-        targetX: Int,
-        targetY: Int,
-        targetWidth: Int,
-        targetHeight: Int,
-        mode: ResamplingMode,
-    ): IntArray = when (mode) {
-        ResamplingMode.NEAREST -> {
-            val sourceX = (((targetX + 0.5) * image.width / targetWidth).toInt())
-                .coerceIn(0, image.width - 1)
-            val sourceY = (((targetY + 0.5) * image.height / targetHeight).toInt())
-                .coerceIn(0, image.height - 1)
-            pixel(image, sourceX, sourceY)
-        }
-        ResamplingMode.BILINEAR -> {
-            val sourceX = ((targetX + 0.5) * image.width / targetWidth - 0.5)
-                .coerceIn(0.0, (image.width - 1).toDouble())
-            val sourceY = ((targetY + 0.5) * image.height / targetHeight - 0.5)
-                .coerceIn(0.0, (image.height - 1).toDouble())
-            val x0 = floor(sourceX).toInt()
-            val y0 = floor(sourceY).toInt()
-            val x1 = (x0 + 1).coerceIn(0, image.width - 1)
-            val y1 = (y0 + 1).coerceIn(0, image.height - 1)
-            val wx = (sourceX - floor(sourceX)).toFloat().coerceIn(0f, 1f)
-            val wy = (sourceY - floor(sourceY)).toFloat().coerceIn(0f, 1f)
-            val p00 = pixel(image, x0, y0)
-            val p10 = pixel(image, x1, y0)
-            val p01 = pixel(image, x0, y1)
-            val p11 = pixel(image, x1, y1)
-            IntArray(3) { channel ->
-                val top = p00[channel] * (1f - wx) + p10[channel] * wx
-                val bottom = p01[channel] * (1f - wx) + p11[channel] * wx
-                (top * (1f - wy) + bottom * wy).roundToInt().coerceIn(0, 255)
-            }
-        }
-    }
-
-    private fun pixel(image: VisionImage, x: Int, y: Int): IntArray {
-        val base = (y * image.width + x) * 3
-        return intArrayOf(
-            image.rgb[base].toInt() and 0xff,
-            image.rgb[base + 1].toInt() and 0xff,
-            image.rgb[base + 2].toInt() and 0xff,
+    fun sourceToModel(box: FloatBox): FloatBox {
+        require(box.width > 0f && box.height > 0f) { "Source box must have positive area" }
+        return FloatBox(
+            (box.left * scaleX + padX).toFloat(), (box.top * scaleY + padY).toFloat(),
+            (box.right * scaleX + padX).toFloat(), (box.bottom * scaleY + padY).toFloat(),
         )
     }
+
+    fun modelToSource(box: FloatBox, clamp: Boolean = false): FloatBox {
+        require(box.width > 0f && box.height > 0f) { "Model box must have positive area" }
+        var left = ((box.left - padX) / scaleX).toFloat()
+        var top = ((box.top - padY) / scaleY).toFloat()
+        var right = ((box.right - padX) / scaleX).toFloat()
+        var bottom = ((box.bottom - padY) / scaleY).toFloat()
+        if (clamp) {
+            left = left.coerceIn(0f, sourceWidth.toFloat())
+            right = right.coerceIn(0f, sourceWidth.toFloat())
+            top = top.coerceIn(0f, sourceHeight.toFloat())
+            bottom = bottom.coerceIn(0f, sourceHeight.toFloat())
+        }
+        return FloatBox(left, top, right, bottom)
+    }
+}
+
+data class PreprocessedImage(
+    val shape: List<Int>,
+    val dtype: TensorDataType,
+    val floatValues: FloatArray?,
+    val byteValues: ByteArray?,
+    val transform: LiteRtResizeTransform,
+)
+
+/** Pure contract-driven RGB preprocessing; no model-specific normalization defaults are supplied. */
+object LiteRtImagePreprocessor {
+    fun preprocess(image: VisionImage, contract: LiteRtModelContract): PreprocessedImage {
+        val width = contract.input.width
+        val height = contract.input.height
+        require(width.toLong() * height <= MAX_MODEL_PIXELS) { "Model input exceeds the supported preprocessing size" }
+        val transform = LiteRtResizeTransform(image.width, image.height, width, height, contract.preprocessing.resizePolicy)
+        val resizedWidth: Int
+        val resizedHeight: Int
+        if (contract.preprocessing.resizePolicy == ResizePolicy.STRETCH) {
+            resizedWidth = width
+            resizedHeight = height
+        } else {
+            resizedWidth = (image.width * transform.scale).roundToInt().coerceIn(1, width)
+            resizedHeight = (image.height * transform.scale).roundToInt().coerceIn(1, height)
+        }
+        val left = (width - resizedWidth) / 2
+        val top = (height - resizedHeight) / 2
+        val channels = Array(height * width) { IntArray(3) { contract.preprocessing.padValue } }
+        for (y in 0 until resizedHeight) {
+            for (x in 0 until resizedWidth) {
+                val pixel = sample(image, x, y, resizedWidth, resizedHeight, contract.preprocessing.resizeFilter)
+                channels[(top + y) * width + left + x] = pixel
+            }
+        }
+
+        val channelIndices = if (contract.preprocessing.channelOrder == ChannelOrder.RGB) intArrayOf(0, 1, 2) else intArrayOf(2, 1, 0)
+        val shape = contract.input.shape
+        val values = FloatArray(width * height * 3)
+        for (y in 0 until height) for (x in 0 until width) for (outputChannel in 0..2) {
+            val channel = channelIndices[outputChannel]
+            val raw = channels[y * width + x][channel]
+            val index = if (contract.input.layout == TensorLayout.NHWC) {
+                (y * width + x) * 3 + outputChannel
+            } else {
+                outputChannel * width * height + y * width + x
+            }
+            val transformed = raw * contract.preprocessing.scale + contract.preprocessing.offset
+            require(transformed.isFinite()) { "Preprocessing produced a nonfinite value" }
+            val floatValue = transformed.toFloat()
+            if (contract.input.dtype == TensorDataType.FLOAT32) {
+                require(floatValue.isFinite()) { "Preprocessing value exceeds FLOAT32 range" }
+            }
+            values[index] = floatValue
+        }
+
+        return when (contract.input.dtype) {
+            TensorDataType.FLOAT32 -> PreprocessedImage(shape, TensorDataType.FLOAT32, values, null, transform)
+            TensorDataType.UINT8 -> {
+                val packed = ByteArray(values.size) { index -> values[index].roundToInt().coerceIn(0, 255).toByte() }
+                PreprocessedImage(shape, TensorDataType.UINT8, null, packed, transform)
+            }
+        }
+    }
+
+    private fun sample(image: VisionImage, x: Int, y: Int, width: Int, height: Int, filter: ResizeFilter): IntArray = when (filter) {
+        ResizeFilter.NEAREST -> {
+            val sx = floor((x + 0.5) * image.width / width).toInt().coerceIn(0, image.width - 1)
+            val sy = floor((y + 0.5) * image.height / height).toInt().coerceIn(0, image.height - 1)
+            rgbAt(image, sx, sy)
+        }
+        ResizeFilter.BILINEAR -> {
+            val fx = ((x + 0.5) * image.width / width - 0.5).coerceIn(0.0, image.width - 1.0)
+            val fy = ((y + 0.5) * image.height / height - 0.5).coerceIn(0.0, image.height - 1.0)
+            val x0 = floor(fx).toInt()
+            val y0 = floor(fy).toInt()
+            val x1 = min(x0 + 1, image.width - 1)
+            val y1 = min(y0 + 1, image.height - 1)
+            val dx = fx - x0
+            val dy = fy - y0
+            IntArray(3) { channel ->
+                val a = unsigned(image, x0, y0, channel) * (1.0 - dx) + unsigned(image, x1, y0, channel) * dx
+                val b = unsigned(image, x0, y1, channel) * (1.0 - dx) + unsigned(image, x1, y1, channel) * dx
+                (a * (1.0 - dy) + b * dy).roundToInt().coerceIn(0, 255)
+            }
+        }
+    }
+
+    private fun rgbAt(image: VisionImage, x: Int, y: Int) = IntArray(3) { channel -> unsigned(image, x, y, channel) }
+    private fun unsigned(image: VisionImage, x: Int, y: Int, channel: Int): Int =
+        image.rgb[(y * image.width + x) * 3 + channel].toInt() and 0xff
+
+    private const val MAX_MODEL_PIXELS = 4_194_304L
 }

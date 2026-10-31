@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "model_kind": "DETECTOR",
+  "artifact": { "sha256": "1111111111111111111111111111111111111111111111111111111111111111" },
+  "input": { "name": "image", "shape": [1, 4, 4, 3], "layout": "NHWC", "dtype": "FLOAT32" },
+  "preprocessing": { "resize_policy": "LETTERBOX", "resize_filter": "NEAREST", "channel_order": "RGB", "scale": 1.0, "offset": 0.0, "pad_value": 0 },
+  "outputs": [
+    { "name": "boxes", "role": "DETECTION_BOXES", "shape": [1, 10, 4], "dtype": "FLOAT32" },
+    { "name": "scores", "role": "DETECTION_SCORES", "shape": [1, 10], "dtype": "FLOAT32" },
+    { "name": "classes", "role": "DETECTION_CLASSES", "shape": [1, 10], "dtype": "FLOAT32" },
+    { "name": "count", "role": "DETECTION_COUNT", "shape": [1], "dtype": "FLOAT32" }
+  ],
+  "detector": {
+    "semantic_classes": ["CARD"],
+    "card_class_index": 0,
+    "boxes": { "tensor": "boxes", "coordinate_order": "YXYX", "coordinate_units": "NORMALIZED" },
+    "scores": { "tensor": "scores" },
+    "classes": { "tensor": "classes" },
+    "count": { "tensor": "count" },
+    "nms": { "ownership": "HOST", "score_threshold": 0.5, "iou_threshold": 0.5 }
+  }
+}
