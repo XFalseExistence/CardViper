@@ -376,20 +376,20 @@ private object StrictJson {
         private fun parseString(): String {
             expect('"')
             val result = StringBuilder()
+            val backslash = 92.toChar()
             while (at < source.length) {
                 val ch = source[at++]
                 when (ch) {
                     '"' -> return result.toString()
-                    '\' -> {
+                    backslash -> {
                         require(at < source.length) { "Unterminated JSON escape" }
                         when (val escaped = source[at++]) {
-                            '"', '\', '/' -> result.append(escaped)
-                            'b' -> result.append('')
-                            'f' -> result.append('')
-                            'n' -> result.append('
-')
-                            'r' -> result.append('')
-                            't' -> result.append('	')
+                            '"', '/', backslash -> result.append(escaped)
+                            'b' -> result.append(8.toChar())
+                            'f' -> result.append(12.toChar())
+                            'n' -> result.append(10.toChar())
+                            'r' -> result.append(13.toChar())
+                            't' -> result.append(9.toChar())
                             'u' -> {
                                 require(at + 4 <= source.length) { "Incomplete Unicode escape" }
                                 val code = source.substring(at, at + 4).toIntOrNull(16)
@@ -397,7 +397,9 @@ private object StrictJson {
                                 result.append(code.toChar())
                                 at += 4
                             }
-                            else -> throw IllegalArgumentException("Unsupported JSON escape: \$escaped")
+                            else -> throw IllegalArgumentException(
+                                "Unsupported JSON escape code: " + escaped.code,
+                            )
                         }
                     }
                     else -> {
