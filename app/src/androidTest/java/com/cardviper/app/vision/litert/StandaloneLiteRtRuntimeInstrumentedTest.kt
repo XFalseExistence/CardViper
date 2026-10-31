@@ -11,7 +11,7 @@ import org.junit.runner.RunWith
 
 /** Executes only a tiny arithmetic TEST_ONLY model through the real standalone LiteRT runtime. */
 @RunWith(AndroidJUnit4::class)
-class LiteRtRuntimeInstrumentedTest {
+class StandaloneLiteRtRuntimeInstrumentedTest {
     @Test fun syntheticArithmeticModelExposesInspectedTensorsAndExecutesExactly() {
         val assets = InstrumentationRegistry.getInstrumentation().context.assets
         val model = assets.open(MODEL_ASSET).use { it.readBytes() }
@@ -36,6 +36,7 @@ class LiteRtRuntimeInstrumentedTest {
         assertArrayEquals(FloatArray(input.size) { input[it] * 2f }, output.getValue(outputName), 0f)
 
         session.close()
+        session.close()
         assertThrows(IllegalStateException::class.java) { session.run(packed) }
     }
 
@@ -48,7 +49,7 @@ class LiteRtRuntimeInstrumentedTest {
     }
 
     private companion object {
-        const val MODEL_ASSET = "vision/litert_runtime_smoke.TEST_ONLY.tflite"
-        const val METADATA_ASSET = "vision/litert_runtime_smoke.TEST_ONLY.json"
+        const val MODEL_ASSET = "vision/TEST_ONLY_SYNTHETIC_NOT_PRODUCTION.tflite"
+        const val METADATA_ASSET = "vision/TEST_ONLY_SYNTHETIC_NOT_PRODUCTION.json"
     }
 }

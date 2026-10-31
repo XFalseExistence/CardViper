@@ -63,8 +63,11 @@ android {
 }
 
 dependencies {
-    // Standalone LiteRT CPU runtime, pinned for reproducible native-library auditing.
-    implementation("com.google.ai.edge.litert:litert:2.3.2")
+    // Standalone LiteRT CPU runtime, pinned in the version catalog for reproducible native-library auditing.
+    // The Interpreter API needs only local model bytes; exclude the API's transitive Play model-delivery branch.
+    implementation(libs.google.ai.edge.litert) {
+        exclude(group = "com.google.android.play", module = "ai-delivery")
+    }
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

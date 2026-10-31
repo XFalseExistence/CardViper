@@ -18,7 +18,7 @@ PINNED_TENSORFLOW = "2.16.2"
 PINNED_LITERT_INSPECTOR = "1.0.1"
 DEFAULT_OUTPUT = (
     Path(__file__).resolve().parents[2]
-    / "app/src/androidTest/assets/vision/litert_runtime_smoke.TEST_ONLY.tflite"
+    / "app/src/androidTest/assets/vision/TEST_ONLY_SYNTHETIC_NOT_PRODUCTION.tflite"
 )
 
 
