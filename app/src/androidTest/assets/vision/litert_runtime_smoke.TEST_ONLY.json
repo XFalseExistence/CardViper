@@ -1,0 +1,30 @@
+{
+  "fixture_kind": "TEST_ONLY_ARITHMETIC_SCALE_BY_TWO_NO_CARD_SEMANTICS",
+  "generator": "tensorflow==2.16.2",
+  "inspector": "ai-edge-litert==1.0.1",
+  "model_sha256": "7c6034154318f79be9672747981adfe06f5d07855575894db65fb69929c6d2f5",
+  "signature": {
+    "input": {
+      "dtype": "FLOAT32",
+      "name": "serving_default_image:0",
+      "shape": [
+        1,
+        2,
+        2,
+        3
+      ]
+    },
+    "outputs": [
+      {
+        "dtype": "FLOAT32",
+        "name": "PartitionedCall:0",
+        "shape": [
+          1,
+          2,
+          2,
+          3
+        ]
+      }
+    ]
+  }
+}

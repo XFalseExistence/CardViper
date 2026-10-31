@@ -63,6 +63,9 @@ android {
 }
 
 dependencies {
+    // Standalone LiteRT CPU runtime, pinned for reproducible native-library auditing.
+    implementation("com.google.ai.edge.litert:litert:2.3.2")
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)

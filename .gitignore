@@ -26,6 +26,7 @@
 /ml/eval/pixel7/private/
 /ml/**/labels.txt
 *.tflite
+!app/src/androidTest/assets/vision/litert_runtime_smoke.TEST_ONLY.tflite
 /ml/**/*.onnx
 /ml/**/*.h5
 /ml/**/*.keras
