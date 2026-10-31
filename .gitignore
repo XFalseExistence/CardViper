@@ -35,6 +35,7 @@
 /ml/**/*.ckpt*
 /ml/**/*.pb
 .venv/
+.venv-ml311/
 venv/
 __pycache__/
 *.py[cod]

@@ -38,6 +38,21 @@ repository's `train` extra:
 python ml/tools/generate_litert_runtime_smoke.py
 ```
 
+The general ML package requirement in `ml/pyproject.toml` is Python `>=3.11`;
+it does not pin these exact TensorFlow or LiteRT-inspector versions for every
+ML task. For byte-for-byte reproduction of this synthetic fixture, use an
+isolated Python 3.11 environment and install the repository extras plus the
+generator's exact tool versions:
+
+```sh
+uv python install 3.11
+uv venv .venv-ml311 --python 3.11
+source .venv-ml311/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e 'ml[test,train]'
+python -m pip install 'tensorflow==2.16.2' 'ai-edge-litert==1.0.1'
+```
+
 The checked-in artifact is accompanied by a generated tensor-signature sidecar
 whose SHA-256 is computed from those exact model bytes. It is not a
 `LiteRtModelContract`: that contract format encodes CardViper classifier or
