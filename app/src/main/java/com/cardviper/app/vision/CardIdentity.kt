@@ -11,4 +11,7 @@ sealed interface CardIdentity {
     }
 
     data object Back : CardIdentity
+
+    /** A deliberately non-identity result for unsupported or low-confidence demo crops. */
+    data object Unknown : CardIdentity
 }

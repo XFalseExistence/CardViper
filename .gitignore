@@ -6,9 +6,11 @@
 .DS_Store
 /build/
 /app/build/
+/app/src/sessionADemo/assets/vision/
 .externalNativeBuild/
 .cxx/
 .superpowers/
+.worktrees/
 
 # ML local/private data and generated outputs; source metadata stays tracked.
 /ml/local/

@@ -34,16 +34,26 @@ android {
 
     buildTypes {
         getByName("debug") {
+            buildConfigField("boolean", "SESSION_A_DEMO", "false")
             if (cardViperCiKeystore != null) {
                 signingConfig = signingConfigs.getByName("debug")
             }
         }
         release {
+            buildConfigField("boolean", "SESSION_A_DEMO", "false")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+        create("sessionADemo") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".sessionademo"
+            buildConfigField("boolean", "SESSION_A_DEMO", "true")
+            if (cardViperCiKeystore != null) {
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
 
@@ -54,7 +64,7 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = false
+        buildConfig = true
     }
 
     packaging {

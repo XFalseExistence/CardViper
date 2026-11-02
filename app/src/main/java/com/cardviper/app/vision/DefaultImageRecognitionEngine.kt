@@ -106,6 +106,7 @@ class DefaultImageRecognitionEngine(
         observations.sumOf { observation ->
             when (val identity = observation.identity) {
                 CardIdentity.Back -> 0
+                CardIdentity.Unknown -> 0
                 is CardIdentity.Face -> strategy.valueOf(identity.card) ?: 0
             }
         }

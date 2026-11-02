@@ -3,7 +3,7 @@ package com.cardviper.app.vision.litert
 import org.json.JSONArray
 import org.json.JSONObject
 
-enum class ModelKind { CLASSIFIER, DETECTOR }
+enum class ModelKind { CLASSIFIER, SESSION_A_FACE_CLASSIFIER, DETECTOR }
 enum class TensorLayout { NHWC, NCHW }
 enum class TensorDataType { FLOAT32, UINT8 }
 enum class ResizePolicy { STRETCH, LETTERBOX }
@@ -69,6 +69,10 @@ data class LiteRtModelContract(
     val detector: DetectorSemantics?,
 ) {
     companion object {
+        internal val sessionADemoFaceLabels: List<String> =
+            listOf("A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K")
+                .flatMap { rank -> listOf("C", "D", "H", "S").map { suit -> "$rank$suit" } }
+
         fun parse(json: String): LiteRtModelContract = try {
             parseRoot(JSONObject(json))
         } catch (failure: IllegalArgumentException) {
@@ -78,7 +82,7 @@ data class LiteRtModelContract(
         }
 
         private fun parseRoot(root: JSONObject): LiteRtModelContract {
-            root.only("schema_version", "model_kind", "artifact", "input", "preprocessing", "outputs", "labels", "labels_sha256", "classifier", "detector")
+            root.only("schema_version", "model_kind", "artifact", "input", "preprocessing", "outputs", "labels", "labels_sha256", "classifier", "detector", "session_a_demo")
             val version = root.requiredInt("schema_version")
             require(version == 1) { "Unsupported contract schema version: $version" }
             val kind = root.requiredEnum<ModelKind>("model_kind")
@@ -123,7 +127,7 @@ data class LiteRtModelContract(
 
             val labels = if (root.has("labels") && !root.isNull("labels")) root.requiredArray("labels").toStringList("labels") else emptyList()
             val labelsHash = if (root.has("labels_sha256") && !root.isNull("labels_sha256")) root.requiredString("labels_sha256").also(::requireSha256) else null
-            val classifier = if (kind == ModelKind.CLASSIFIER) {
+            val classifier = if (kind == ModelKind.CLASSIFIER || kind == ModelKind.SESSION_A_FACE_CLASSIFIER) {
                 require(root.has("classifier") && !root.isNull("classifier")) { "Classifier semantics are required" }
                 root.requiredObject("classifier").also { it.only("top_k", "score_semantics") }.let {
                     ClassifierSemantics(it.requiredInt("top_k"), it.requiredEnum("score_semantics"))
@@ -136,6 +140,7 @@ data class LiteRtModelContract(
 
             if (kind == ModelKind.CLASSIFIER) {
                 require(!root.has("detector") || root.isNull("detector")) { "Classifier contract cannot declare detector semantics" }
+                require(!root.has("session_a_demo") || root.isNull("session_a_demo")) { "Production classifier cannot declare Session A semantics" }
                 require(labels.size == 53) { "Classifier must declare exactly 53 labels" }
                 require(labels.distinct().size == labels.size) { "Classifier labels must be unique" }
                 require(labels[52] == "BACK") { "BACK must be canonical classifier index 52" }
@@ -149,7 +154,23 @@ data class LiteRtModelContract(
                 require(outputs.single().shape.last() == 53) { "Classifier output width must be 53" }
                 require(outputs.single().shape == listOf(1, 53)) { "Classifier score output must have shape [1,53]" }
                 require(outputs.single().dtype == TensorDataType.FLOAT32) { "Classifier score output must be FLOAT32" }
+            } else if (kind == ModelKind.SESSION_A_FACE_CLASSIFIER) {
+                require(!root.has("detector") || root.isNull("detector")) { "Session A classifier cannot declare detector semantics" }
+                val demo = root.requiredObject("session_a_demo").also { it.only("usage", "independence", "face_up_only", "back_supported") }
+                require(demo.requiredString("usage") == "SESSION_A_DEMO_ONLY") { "Session A classifier usage must be demo-only" }
+                require(demo.requiredString("independence") == "NOT_INDEPENDENT") { "Session A classifier must disclose non-independent data" }
+                require(demo.get("face_up_only") == true && demo.get("back_supported") == false) { "Session A classifier must be face-up-only with BACK unsupported" }
+                require(labels == sessionADemoFaceLabels) { "Session A classifier labels must be the canonical 52 faces" }
+                require(labelsHash != null) { "Session A classifier label SHA-256 is required" }
+                labels.forEach { label ->
+                    val identity = com.cardviper.app.vision.CardLabelCodec.decode(label)
+                    require(identity is com.cardviper.app.vision.CardIdentity.Face) { "Session A classifier cannot contain BACK" }
+                }
+                require(classifier!!.topK in 1..52) { "Session A classifier top_k must be between 1 and 52" }
+                require(outputs.size == 1 && outputs.single().role == OutputRole.CLASSIFIER_SCORES) { "Session A classifier must have one score output" }
+                require(outputs.single().shape == listOf(1, 52)) { "Session A classifier score output must have shape [1,52]" }
             } else {
+                require(!root.has("session_a_demo") || root.isNull("session_a_demo")) { "Detector cannot declare Session A classifier semantics" }
                 require(labels.isEmpty()) { "Detector semantic classes are declared in detector, not labels" }
                 require(labelsHash == null) { "Detector contracts cannot declare classifier labels hash" }
                 require(classifier == null) { "Detector contract cannot declare classifier semantics" }

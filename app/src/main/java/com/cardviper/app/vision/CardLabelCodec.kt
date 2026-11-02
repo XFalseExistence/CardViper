@@ -30,6 +30,7 @@ object CardLabelCodec {
 
     fun encode(identity: CardIdentity): String = when (identity) {
         CardIdentity.Back -> "BACK"
+        CardIdentity.Unknown -> "UNSURE"
         is CardIdentity.Face -> rankToToken.getValue(identity.card.rank) +
             suitToToken.getValue(requireNotNull(identity.card.suit))
     }

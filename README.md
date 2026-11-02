@@ -75,6 +75,22 @@ CI also verifies the APK signer and uploads `app-debug.apk` as **CardViper-debug
 
 Phase B has not started. No model tensor shapes, quantization, normalization or output ordering are guessed by Phase A.
 
+## Session A phone demo (separate, non-production build)
+
+The `sessionADemo` build type is an opt-in, debug-signed demonstration path.
+When supplied with ignored local assets, it runs a real offline LiteRT
+one-class `CARD` detector and a separate 52-face classifier through
+**IMAGE TEST**. It displays **SESSION A / FACE-UP DEMO** and never updates the
+shoe ledger. It supports only face-up still images resembling the approved
+single DroidCam Session A; card backs, new scenes, live camera inference and
+quality claims are explicitly unsupported.
+
+The ordinary debug and release variants keep `UnavailableCardDetector` and
+`NoOpCardRecognizer`; no Session A model asset is tracked or packaged there.
+See the [Session A phone-demo handoff](ml/reports/session-a-phone-demo.md) for
+the local-only artifact, 16 KB emulator and S22+ workflow. A working demo is
+not eligible for production promotion.
+
 Later milestones remain recorded-video replay, live recognition, temporal tracking/duplicate suppression, FPV performance tuning, and expanded training statistics.
 
 ## Offline policy

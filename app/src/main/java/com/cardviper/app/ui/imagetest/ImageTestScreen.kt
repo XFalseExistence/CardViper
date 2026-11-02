@@ -37,8 +37,29 @@ import kotlin.math.roundToInt
 
 private val UncertainYellow = Color(0xFFFFD54F)
 
+internal object ImageTestDisclosure {
+    fun forBuild(isSessionADemo: Boolean): List<String> = if (isSessionADemo) {
+        listOf(
+            "SESSION A / FACE-UP DEMO",
+            "OFFLINE local processing. Image results never change your active shoe.",
+            "Optimized only for the Session A DroidCam scene. FACE-UP cards only; card backs and new scenes are unsupported.",
+            "No quality claim: Session A is one source family. Image results never change your active shoe.",
+        )
+    } else {
+        listOf(
+            "Local, offline processing. Image results never change your active shoe.",
+            "Trained automatic card recognition is not active. Vision models are not installed yet.",
+        )
+    }
+}
+
 @Composable
-fun ImageTestScreen(state: ImageRecognitionUiState, onImageSelected: (String) -> Unit, onBack: () -> Unit) {
+fun ImageTestScreen(
+    state: ImageRecognitionUiState,
+    onImageSelected: (String) -> Unit,
+    onBack: () -> Unit,
+    isSessionADemo: Boolean = false,
+) {
     BackHandler(onBack = onBack)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) onImageSelected(uri.toString())
@@ -48,10 +69,13 @@ fun ImageTestScreen(state: ImageRecognitionUiState, onImageSelected: (String) ->
         item {
             TextButton(onClick = onBack) { Text("BACK") }
             Text("IMAGE TEST", style = MaterialTheme.typography.headlineMedium)
-            Text("Local, offline processing. Image results never change your active shoe.",
-                style = MaterialTheme.typography.bodySmall)
-            Text("Trained automatic card recognition is not active. Vision models are not installed yet.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ImageTestDisclosure.forBuild(isSessionADemo).forEachIndexed { index, copy ->
+                Text(
+                    copy,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isSessionADemo && index == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         item {
             Button(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },

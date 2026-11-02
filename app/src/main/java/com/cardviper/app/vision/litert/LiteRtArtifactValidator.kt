@@ -21,7 +21,7 @@ object LiteRtArtifactValidator {
     fun validateDeclaredBytes(contract: LiteRtModelContract, modelBytes: ByteArray, labelsBytes: ByteArray?) {
         require(modelBytes.isNotEmpty()) { "Model artifact is empty" }
         require(sha256(modelBytes).equals(contract.artifactSha256, ignoreCase = true)) { "Model artifact SHA-256 mismatch" }
-        if (contract.kind == ModelKind.CLASSIFIER) {
+        if (contract.kind == ModelKind.CLASSIFIER || contract.kind == ModelKind.SESSION_A_FACE_CLASSIFIER) {
             require(labelsBytes != null) { "Classifier labels file is required" }
             val labelHash = contract.labelsSha256 ?: throw IllegalArgumentException("Classifier labels SHA-256 is required")
             require(sha256(labelsBytes).equals(labelHash, ignoreCase = true)) { "Classifier labels SHA-256 mismatch" }

@@ -47,6 +47,17 @@ class DefaultImageRecognitionEngineTest {
         assertEquals(1, result.kiss3Delta)
     }
 
+    @Test fun unknownDemoCropIsUncertainAndNeverChangesImageLocalCounts() = runTest {
+        val output = CardRecognition(CardIdentity.Unknown, 0.55f)
+        val result = engine(prediction = output).recognize(image())
+
+        assertEquals(CardIdentity.Unknown, result.observations.single().identity)
+        assertTrue(result.observations.single().uncertain)
+        assertEquals(1, result.uncertainCount)
+        assertEquals(0, result.koDelta)
+        assertEquals(0, result.kiss3Delta)
+    }
+
     @Test fun confidenceThresholdIsInclusiveAndConfigurableForFacesAndBacks() = runTest {
         for (label in listOf("5C", "BACK")) {
             assertFalse(engine(prediction = prediction(label, 0.8f)).recognize(image()).observations.single().uncertain)

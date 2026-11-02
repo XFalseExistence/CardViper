@@ -36,6 +36,10 @@ cardviper-detector-records = "cardviper_ml.build_detector_records:main"
 cardviper-import-detector-negatives = "cardviper_ml.import_detector_negatives:main"
 cardviper-detector-export-smoke = "cardviper_ml.detector_export_smoke:main"
 cardviper-inspect-detector = "cardviper_ml.inspect_detector_litert:main"
+cardviper-prepare-session-a-demo = "cardviper_ml.session_a_demo_data:main"
+cardviper-train-session-a-demo-classifier = "cardviper_ml.train_session_a_demo_classifier:main"
+cardviper-train-session-a-demo-detector = "cardviper_ml.train_session_a_demo_detector:main"
+cardviper-package-session-a-demo = "cardviper_ml.export_session_a_demo:main"
 
 [tool.setuptools.packages.find]
 include = ["cardviper_ml*"]

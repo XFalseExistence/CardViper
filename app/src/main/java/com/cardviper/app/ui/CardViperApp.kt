@@ -10,6 +10,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.cardviper.app.BuildConfig
 import com.cardviper.app.ui.home.HomeScreen
 import com.cardviper.app.ui.imagetest.ImageRecognitionViewModel
 import com.cardviper.app.ui.imagetest.ImageTestScreen
@@ -54,6 +55,7 @@ fun CardViperApp(model: CardViperViewModel, imageModel: ImageRecognitionViewMode
                         state = imageState,
                         onImageSelected = imageModel::analyze,
                         onBack = { imageModel.reset(); nav.popBackStack() },
+                        isSessionADemo = BuildConfig.SESSION_A_DEMO,
                     )
                 }
                 composable(NEW_SHOE.route) {

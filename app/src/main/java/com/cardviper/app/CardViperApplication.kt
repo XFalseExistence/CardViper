@@ -11,6 +11,7 @@ import com.cardviper.app.vision.ImageRecognitionEngine
 import com.cardviper.app.vision.ImageSourceLoader
 import com.cardviper.app.vision.NoOpCardRecognizer
 import com.cardviper.app.vision.UnavailableCardDetector
+import com.cardviper.app.vision.litert.SessionADemoVisionFactory
 
 class CardViperApplication : Application() {
     val database: CardViperDatabase by lazy { CardViperDatabase.get(this) }
@@ -19,9 +20,15 @@ class CardViperApplication : Application() {
     val preferencesRepository: PreferencesRepository by lazy { PreferencesRepository(this) }
     val imageSourceLoader: ImageSourceLoader by lazy { AndroidImageSourceLoader(this) }
     val imageRecognitionEngine: ImageRecognitionEngine by lazy {
-        DefaultImageRecognitionEngine(
-            detector = UnavailableCardDetector(),
-            recognizer = NoOpCardRecognizer(),
+        SessionADemoVisionFactory.select(
+            isSessionADemo = BuildConfig.SESSION_A_DEMO,
+            standard = {
+                DefaultImageRecognitionEngine(
+                    detector = UnavailableCardDetector(),
+                    recognizer = NoOpCardRecognizer(),
+                )
+            },
+            demo = { SessionADemoVisionFactory.create(this) },
         )
     }
 }
