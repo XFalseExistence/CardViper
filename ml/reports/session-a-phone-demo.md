@@ -6,8 +6,8 @@ It is limited to the approved single DroidCam Session A source, face-up cards
 and still images. It is not independent evaluation, a quality claim, a
 production model, live-camera recognition or a shoe-ledger input.
 
-Do not commit any output below. The repository ignores both `ml/local/` and
-`app/src/sessionADemo/assets/vision/`.
+Do not commit any output below. The training workspace stays on the external
+disk, and the repository ignores `app/src/sessionADemo/assets/vision/`.
 
 ## Prerequisites
 
@@ -38,7 +38,8 @@ FAMILY_AUDIT="/Volumes/Toshi4TB/DEV_CACHE/CardViper/joshua-family-audit-pushed.j
 FAMILY_PROPOSAL="/Volumes/Toshi4TB/DEV_CACHE/CardViper/joshua-family-proposal-pushed.json"
 REVIEW_DECISIONS="$HOME/Downloads/review-decisions (4).json"
 REVIEWED_GROUPS="/Volumes/Toshi4TB/DEV_CACHE/CardViper/reviewed-groups-session-a.json"
-WORK="$PWD/ml/local/session-a-demo"
+# The extraction and crops can be large; keep them off the nearly-full internal SSD.
+WORK="/Volumes/Toshi4TB/DEV_CACHE/CardViper/session-a-demo"
 
 test -x "$PY"
 test -f "$ARCHIVE"
